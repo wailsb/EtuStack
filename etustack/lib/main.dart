@@ -13,12 +13,15 @@ void main() async {
   
   // Initialize the database
   try {
+    // First create the receipts related tables
+    final receiptDbHelper = DatabaseHelperReceipt();
+    await receiptDbHelper.initialize();
+    
+    // Then initialize the main database
     final dbHelper = DatabaseHelper();
     await dbHelper.database; // This will create the database if it doesn't exist
     
-    // Initialize receipt database helper
-    final receiptDbHelper = DatabaseHelperReceipt();
-    await receiptDbHelper.initialize();
+    print('Database initialization completed successfully');
   } catch (e) {
     print('Database initialization error: $e');
     // In web, we might get errors with certain plugins
@@ -51,6 +54,7 @@ class _MyAppState extends State<MyApp> {
     const bool enforceLicensing = false;
     
     if (enforceLicensing) {
+      // Production mode - check license
       final isLicensed = await _licensingService.initialize();
       setState(() {
         _isLicenseChecked = true;

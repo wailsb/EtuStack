@@ -1,11 +1,9 @@
 import 'dart:async';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 import '../models/receipt.dart';
 import '../models/receipt_item.dart';
-import '../models/product.dart';
-import '../models/client.dart';
 
 /// Extension to database helper for receipt-related operations
 class DatabaseHelperReceipt {
@@ -43,11 +41,24 @@ class DatabaseHelperReceipt {
           final databasePath = await getDatabasesPath();
           final path = join(databasePath, 'inventory.db');
           
+          // Check if database exists (useful for debugging)
+          await databaseExists(path);
+          
           _database = await openDatabase(
             path,
             version: 2, // Increased version for schema updates
             onCreate: _createDb,
             onUpgrade: _onUpgrade,
+            onOpen: (db) async {
+              // Critical: Always check if receipts table exists when opening the database
+              // This handles cases where the table might not have been created properly
+              final tables = await db.rawQuery("SELECT name FROM sqlite_master WHERE type='table' AND name='receipts';");
+              if (tables.isEmpty) {
+                print('Receipts table missing, creating it now...');
+                // Force create the receipts table if it doesn't exist
+                await _createDb(db, 2);
+              }
+            },
           );
           print('SQLite database initialized successfully');
         } catch (e) {
@@ -87,33 +98,49 @@ class DatabaseHelperReceipt {
     }
   }
 
+  // Implementation for missing method referenced in extension class
+  // (Not used directly - see the getReceiptsWithClientNames implementation below)
+
   // Create database tables
   Future<void> _createDb(Database db, int version) async {
-    // Create Receipt table
-    await db.execute('''
-      CREATE TABLE receipts(
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        date DATETIME NOT NULL,
-        client_id INTEGER,
-        total_amount REAL NOT NULL DEFAULT 0,
-        status TEXT NOT NULL DEFAULT 'pending',
-        FOREIGN KEY (client_id) REFERENCES clients (id)
-      )
-    ''');
-
-    // Create ReceiptItem table
-    await db.execute('''
-      CREATE TABLE receipt_items(
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        receipt_id INTEGER NOT NULL,
-        product_id INTEGER NOT NULL,
-        quantity INTEGER NOT NULL DEFAULT 1,
-        price_at_sale REAL NOT NULL,
-        total REAL NOT NULL,
-        FOREIGN KEY (receipt_id) REFERENCES receipts (id),
-        FOREIGN KEY (product_id) REFERENCES products (id)
-      )
-    ''');
+    // Check if receipts table exists
+    final tables = await db.rawQuery("SELECT name FROM sqlite_master WHERE type='table' AND name='receipts';");
+    
+    if (tables.isEmpty) {
+      // Create Receipt table if it doesn't exist
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS receipts(
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          date DATETIME NOT NULL,
+          client_id INTEGER,
+          company TEXT,
+          total_amount REAL NOT NULL DEFAULT 0,
+          status TEXT NOT NULL DEFAULT 'pending',
+          FOREIGN KEY (client_id) REFERENCES clients (id)
+        )
+      ''');
+      print('Receipts table created successfully');
+    }
+    
+    // Check if receipt_items table exists
+    final itemTables = await db.rawQuery("SELECT name FROM sqlite_master WHERE type='table' AND name='receipt_items';");
+    
+    if (itemTables.isEmpty) {
+      // Create ReceiptItem table if it doesn't exist
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS receipt_items(
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          receipt_id INTEGER NOT NULL,
+          product_id INTEGER NOT NULL,
+          quantity INTEGER NOT NULL DEFAULT 1,
+          price_at_sale REAL NOT NULL,
+          total REAL NOT NULL,
+          FOREIGN KEY (receipt_id) REFERENCES receipts (id),
+          FOREIGN KEY (product_id) REFERENCES products (id)
+        )
+      ''');
+      print('Receipt_items table created successfully');
+    }
   }
   
   // Handle database upgrades
@@ -121,6 +148,27 @@ class DatabaseHelperReceipt {
     if (oldVersion < 2) {
       // Add receipt-related tables if upgrading from version 1
       await _createDb(db, newVersion);
+    }
+    
+    // Check if company column exists in receipts table
+    try {
+      final pragma = await db.rawQuery("PRAGMA table_info(receipts)");
+      bool hasCompanyColumn = false;
+      
+      for (var column in pragma) {
+        if (column['name'] == 'company') {
+          hasCompanyColumn = true;
+          break;
+        }
+      }
+      
+      if (!hasCompanyColumn) {
+        // Add company column if it doesn't exist
+        await db.execute("ALTER TABLE receipts ADD COLUMN company TEXT;");
+        print('Added company column to receipts table');
+      }
+    } catch (e) {
+      print('Error checking/adding company column: $e');
     }
   }
 

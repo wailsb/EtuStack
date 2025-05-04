@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:mobile_scanner/mobile_scanner.dart';
 import '../models/receipt.dart';
 import '../models/receipt_item.dart';
 import '../models/client.dart';
@@ -17,7 +18,7 @@ class ReceiptManagementScreen extends StatefulWidget {
 
 class _ReceiptManagementScreenState extends State<ReceiptManagementScreen> {
   final DatabaseHelperReceipt _dbHelper = DatabaseHelperReceipt();
-  final DatabaseHelper _mainDbHelper = DatabaseHelper();
+  // Removed unused DatabaseHelper field
   List<Map<String, dynamic>> _receipts = [];
   bool _isLoading = true;
   String _searchQuery = '';
@@ -257,10 +258,12 @@ class _ReceiptFormScreenState extends State<ReceiptFormScreen> {
         
         // Initialize with existing receipt data if editing
         if (widget.receipt != null) {
-          _selectedClient = _clients.firstWhere(
-            (client) => client.id == widget.receipt!.clientId,
-            orElse: () => null,
-          );
+          if (widget.receipt!.clientId != null) {
+            _selectedClient = _clients.firstWhere(
+              (client) => client.id == widget.receipt!.clientId,
+              orElse: () => Client(name: 'Unknown Client'),
+            );
+          }
           // We would also load receipt items here
         }
       });
@@ -533,7 +536,47 @@ class _ProductSelectionSheetState extends State<ProductSelectionSheet> {
   Product? _selectedProduct;
   int _quantity = 1;
   String _searchQuery = '';
+  bool _isScannerVisible = false;
+  final MobileScannerController _scannerController = MobileScannerController();
   
+  @override
+  void dispose() {
+    _scannerController.dispose();
+    super.dispose();
+  }
+
+  void _scanBarcode() {
+    setState(() {
+      _isScannerVisible = true;
+    });
+  }
+
+  void _closeScanner() {
+    setState(() {
+      _isScannerVisible = false;
+    });
+  }
+
+  void _onBarcodeDetected(BarcodeCapture capture) {
+    if (capture.barcodes.isNotEmpty) {
+      final barcode = capture.barcodes.first.rawValue ?? '';
+      setState(() {
+        _searchQuery = barcode;
+        _isScannerVisible = false;
+      });
+      
+      // Attempt to find and select the product with matching barcode
+      final matchingProduct = widget.products.firstWhere(
+        (product) => product.barcode == barcode,
+        orElse: () => widget.products[0],
+      );
+      
+      setState(() {
+        _selectedProduct = matchingProduct;
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final filteredProducts = widget.products.where((product) {
@@ -541,6 +584,28 @@ class _ProductSelectionSheetState extends State<ProductSelectionSheet> {
       return product.name.toLowerCase().contains(searchLower) ||
           (product.barcode?.toLowerCase() ?? '').contains(searchLower);
     }).toList();
+    
+    // Show scanner if visible
+    if (_isScannerVisible) {
+      return Stack(
+        children: [
+          Positioned.fill(
+            child: MobileScanner(
+              controller: _scannerController,
+              onDetect: _onBarcodeDetected,
+            ),
+          ),
+          Positioned(
+            top: 20,
+            right: 20,
+            child: IconButton(
+              icon: const Icon(Icons.close, color: Colors.white),
+              onPressed: _closeScanner,
+            ),
+          ),
+        ],
+      );
+    }
     
     return DraggableScrollableSheet(
       initialChildSize: 0.9,
@@ -560,17 +625,30 @@ class _ProductSelectionSheetState extends State<ProductSelectionSheet> {
                 ),
               ),
               const SizedBox(height: 16),
-              TextField(
-                decoration: const InputDecoration(
-                  labelText: 'Search Products',
-                  prefixIcon: Icon(Icons.search),
-                  border: OutlineInputBorder(),
-                ),
-                onChanged: (value) {
-                  setState(() {
-                    _searchQuery = value;
-                  });
-                },
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      decoration: const InputDecoration(
+                        labelText: 'Search Products',
+                        prefixIcon: Icon(Icons.search),
+                        border: OutlineInputBorder(),
+                      ),
+                      onChanged: (value) {
+                        setState(() {
+                          _searchQuery = value;
+                        });
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  IconButton(
+                    icon: const Icon(Icons.qr_code_scanner),
+                    onPressed: _scanBarcode,
+                    tooltip: 'Scan Barcode',
+                    color: AppConstants.primaryColor,
+                  ),
+                ],
               ),
               const SizedBox(height: 16),
               Expanded(
