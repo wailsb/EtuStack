@@ -13,13 +13,15 @@ void main() async {
   
   // Initialize the database
   try {
-    // First create the receipts related tables
+    // First initialize the receipt database helper and check schema
     final receiptDbHelper = DatabaseHelperReceipt();
     await receiptDbHelper.initialize();
+    await receiptDbHelper.checkDatabaseSchema(); // Ensure all tables and columns exist
     
     // Then initialize the main database
     final dbHelper = DatabaseHelper();
     await dbHelper.database; // This will create the database if it doesn't exist
+    await dbHelper.initialize(); // Additional check for tables
     
     print('Database initialization completed successfully');
   } catch (e) {

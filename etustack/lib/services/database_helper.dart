@@ -115,7 +115,7 @@ class DatabaseHelper {
   Future<void> _createDb(Database db, int version) async {
     // Create Category table
     await db.execute('''
-      CREATE TABLE categories(
+      CREATE TABLE IF NOT EXISTS categories(
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
         description TEXT
@@ -124,7 +124,7 @@ class DatabaseHelper {
 
     // Create Supplier table
     await db.execute('''
-      CREATE TABLE suppliers(
+      CREATE TABLE IF NOT EXISTS suppliers(
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
         company TEXT,
@@ -134,7 +134,7 @@ class DatabaseHelper {
 
     // Create Product table
     await db.execute('''
-      CREATE TABLE products(
+      CREATE TABLE IF NOT EXISTS products(
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         barcode TEXT,
         name TEXT NOT NULL,
@@ -151,7 +151,7 @@ class DatabaseHelper {
 
     // Create Client table
     await db.execute('''
-      CREATE TABLE clients(
+      CREATE TABLE IF NOT EXISTS clients(
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
         description TEXT,
@@ -161,7 +161,7 @@ class DatabaseHelper {
 
     // Create Cart table
     await db.execute('''
-      CREATE TABLE carts(
+      CREATE TABLE IF NOT EXISTS carts(
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         date DATETIME NOT NULL,
         client_id INTEGER,
@@ -172,7 +172,7 @@ class DatabaseHelper {
 
     // Create CartItem table
     await db.execute('''
-      CREATE TABLE cart_items(
+      CREATE TABLE IF NOT EXISTS cart_items(
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         cart_id INTEGER NOT NULL,
         product_id INTEGER NOT NULL,

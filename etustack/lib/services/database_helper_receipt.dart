@@ -146,29 +146,51 @@ class DatabaseHelperReceipt {
   // Handle database upgrades
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
     if (oldVersion < 2) {
-      // Add receipt-related tables if upgrading from version 1
+      // First ensure the tables exist
       await _createDb(db, newVersion);
-    }
-    
-    // Check if company column exists in receipts table
-    try {
-      final pragma = await db.rawQuery("PRAGMA table_info(receipts)");
-      bool hasCompanyColumn = false;
       
-      for (var column in pragma) {
-        if (column['name'] == 'company') {
-          hasCompanyColumn = true;
-          break;
+      // Add new columns for version 2
+      try {
+        // Check if company column exists in receipts table
+        final columns = await db.rawQuery("PRAGMA table_info(receipts);");
+        final columnNames = columns.map((c) => c['name'] as String).toList();
+        
+        if (!columnNames.contains('company')) {
+          // Add company column if it doesn't exist
+          await db.execute("ALTER TABLE receipts ADD COLUMN company TEXT;");
+          print('Added company column to receipts table');
         }
+      } catch (e) {
+        print('Error upgrading database: $e');
+      }
+    }
+  }
+
+  // Check and update database schema if needed
+  Future<void> checkDatabaseSchema() async {
+    if (_usingMemory) return; // Skip for in-memory database
+    
+    try {
+      final db = await database;
+      if (db == null) return;
+      
+      // Check if receipts table exists
+      final tables = await db.rawQuery("SELECT name FROM sqlite_master WHERE type='table' AND name='receipts';");
+      if (tables.isEmpty) {
+        await _createDb(db, 2);
+        return;
       }
       
-      if (!hasCompanyColumn) {
-        // Add company column if it doesn't exist
+      // Check for company column in receipts table
+      final columns = await db.rawQuery("PRAGMA table_info(receipts);");
+      final columnNames = columns.map((c) => c['name'] as String).toList();
+      
+      if (!columnNames.contains('company')) {
         await db.execute("ALTER TABLE receipts ADD COLUMN company TEXT;");
-        print('Added company column to receipts table');
+        print('Added missing company column to receipts table');
       }
     } catch (e) {
-      print('Error checking/adding company column: $e');
+      print('Error checking database schema: $e');
     }
   }
 
