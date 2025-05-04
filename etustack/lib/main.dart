@@ -53,20 +53,22 @@ class _MyAppState extends State<MyApp> {
     // Skip license check during development - set to true for production
     const bool enforceLicensing = false;
     
-    if (enforceLicensing) {
-      // Production mode - check license
-      final isLicensed = await _licensingService.initialize();
-      setState(() {
-        _isLicenseChecked = true;
-        _isLicensed = isLicensed;
-      });
-    } else {
+    // For development mode, skip license check
+    if (!enforceLicensing) {
       // Development mode - skip licensing
       setState(() {
         _isLicenseChecked = true;
         _isLicensed = true;
       });
+      return;
     }
+    
+    // Production mode - check license
+    final isLicensed = await _licensingService.initialize();
+    setState(() {
+      _isLicenseChecked = true;
+      _isLicensed = isLicensed;
+    });
   }
   
   void _onLicenseActivated() {

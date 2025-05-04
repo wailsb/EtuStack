@@ -243,7 +243,7 @@ class DatabaseHelperDashboard {
       return result;
     } catch (e) {
       print('Error getting monthly sales data: $e');
-      return _generateMonthlySalesData(months);
+      return []; // Return empty data instead of mocks
     }
   }
 }
