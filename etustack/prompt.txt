@@ -1,0 +1,15 @@
+i want this flutter mobile app to have & main pages and sqlite db 
+product management page
+categorie management page
+fournisseur management page
+client management page 
+main page (scan product add them to cart db ) the option to see product price and to add it to a cart and set its qntiti the scanner is the phone camera it scans barcode
+admin dashboard which has 
+carts history revenue benefice outcome (with intervals from x to y ) statistics
+the db main entities are those enhance them to 4th normal form
+product(id,barcode,name,description,qnt,buyprice,sellprice,categorie,fournisseur)
+categorie(id,name,description)
+fournisseur(id,name,company,description,phone)
+carts(id,dateofbuy,product(many to many),client)
+client(id,name,description,phone,points)
+add any neccessary stuff
