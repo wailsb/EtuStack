@@ -73,6 +73,9 @@ class DatabaseHelper {
         await _addSampleData();
         _sampleDataAdded = true;
       }
+      
+      // Ensure essential categories exist
+      await _ensureEssentialCategories();
     }
   }
 
@@ -102,11 +105,17 @@ class DatabaseHelper {
     }
   }
 
+  // No default categories - users will add their own categories
+  Future<void> _ensureEssentialCategories() async {
+    // Method left empty to allow users to add their own categories
+    print('No default categories added - users will manage their own categories');
+  }
+
   // Create database tables
   Future<void> _createDb(Database db, int version) async {
     // Create Category table
     await db.execute('''
-      CREATE TABLE categories(
+      CREATE TABLE IF NOT EXISTS categories(
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
         description TEXT
@@ -115,16 +124,17 @@ class DatabaseHelper {
 
     // Create Supplier table
     await db.execute('''
-      CREATE TABLE suppliers(
+      CREATE TABLE IF NOT EXISTS suppliers(
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
+        company TEXT,
         phone TEXT
       )
     ''');
 
     // Create Product table
     await db.execute('''
-      CREATE TABLE products(
+      CREATE TABLE IF NOT EXISTS products(
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         barcode TEXT,
         name TEXT NOT NULL,
@@ -141,16 +151,17 @@ class DatabaseHelper {
 
     // Create Client table
     await db.execute('''
-      CREATE TABLE clients(
+      CREATE TABLE IF NOT EXISTS clients(
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
+        description TEXT,
         phone TEXT
       )
     ''');
 
     // Create Cart table
     await db.execute('''
-      CREATE TABLE carts(
+      CREATE TABLE IF NOT EXISTS carts(
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         date DATETIME NOT NULL,
         client_id INTEGER,
@@ -161,7 +172,7 @@ class DatabaseHelper {
 
     // Create CartItem table
     await db.execute('''
-      CREATE TABLE cart_items(
+      CREATE TABLE IF NOT EXISTS cart_items(
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         cart_id INTEGER NOT NULL,
         product_id INTEGER NOT NULL,
@@ -277,12 +288,35 @@ class DatabaseHelper {
 
   // Product CRUD Operations
   Future<int> insertProduct(Product product) async {
+    // Check if barcode already exists
+    if (product.barcode != null && product.barcode!.isNotEmpty) {
+      final existingProduct = await getProductByBarcode(product.barcode!);
+      if (existingProduct != null) {
+        // Barcode already exists, return error code
+        return -1;
+      }
+    }
+    
     return _executeDbOperation<int>(
       dbOperation: (Database db) async {
         return await db.insert('products', product.toMap());
       },
       memoryOperation: () {
+        // Add to in-memory storage
         final products = _memoryDb['products'] as List<Product>;
+        
+        // Check for duplicate barcode in memory too
+        if (product.barcode != null && product.barcode!.isNotEmpty) {
+          bool duplicateBarcode = products.any((p) => 
+              p.barcode != null && 
+              p.barcode!.isNotEmpty && 
+              p.barcode == product.barcode);
+              
+          if (duplicateBarcode) {
+            return -1; // Error: duplicate barcode
+          }
+        }
+        
         if (product.id == null) {
           // Auto-increment ID
           product = Product(
@@ -822,50 +856,9 @@ class DatabaseHelper {
     );
   }
 
-  // Method to add sample data for testing
+  // Empty method - we don't add sample data anymore, letting users manage their own data
   Future<void> _addSampleData() async {
-    // Add sample categories
-    final electronicsCategory = Category(name: 'Electronics', description: 'Electronic devices and accessories');
-    final groceryCategory = Category(name: 'Grocery', description: 'Food and household items');
-    
-    final elecId = await insertCategory(electronicsCategory);
-    final grocId = await insertCategory(groceryCategory);
-    
-    // Add sample suppliers
-    final techSupplier = Supplier(name: 'TechWorld', phone: '123-456-7890');
-    final foodSupplier = Supplier(name: 'FoodCorp', phone: '987-654-3210');
-    
-    final techId = await insertSupplier(techSupplier);
-    final foodId = await insertSupplier(foodSupplier);
-    
-    // Add sample products
-    await insertProduct(Product(
-      barcode: '1234567890123',
-      name: 'Smartphone',
-      description: 'Latest model smartphone',
-      quantity: 10,
-      buyPrice: 300.0,
-      sellPrice: 399.99,
-      categoryId: elecId,
-      supplierId: techId,
-    ));
-    
-    await insertProduct(Product(
-      barcode: '3210987654321',
-      name: 'Milk',
-      description: 'Fresh milk',
-      quantity: 50,
-      buyPrice: 1.0,
-      sellPrice: 1.99,
-      categoryId: grocId,
-      supplierId: foodId,
-    ));
-    
-    // Add sample clients
-    final client1 = Client(name: 'John Doe', phone: '555-123-4567');
-    final client2 = Client(name: 'Jane Smith', phone: '555-987-6543');
-    
-    await insertClient(client1);
-    await insertClient(client2);
+    // No sample data is added, allowing users to start with a clean database
+    print('Sample data addition skipped - users will start with a clean database');
   }
 }

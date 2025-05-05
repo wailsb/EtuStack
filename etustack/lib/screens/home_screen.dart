@@ -9,6 +9,7 @@ import './client_management_screen.dart';
 import './scanner_screen.dart';
 import './admin_dashboard_screen.dart';
 import './cart_screen.dart';
+import './receipt_management_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({Key? key}) : super(key: key);
@@ -33,6 +34,7 @@ class _HomeScreenState extends State<HomeScreen> {
     const CategoryManagementScreen(),
     const SupplierManagementScreen(),
     const ClientManagementScreen(),
+    const ReceiptManagementScreen(),
     const AdminDashboardScreen(),
   ];
 
@@ -163,14 +165,25 @@ class _HomeScreenState extends State<HomeScreen> {
                 Navigator.pop(context);
               },
             ),
-            const Divider(),
             ListTile(
-              leading: const Icon(Icons.analytics),
-              title: const Text('Admin Dashboard'),
+              leading: const Icon(Icons.receipt),
+              title: const Text('Receipt Management'),
               selected: _selectedIndex == 5,
               onTap: () {
                 setState(() {
                   _selectedIndex = 5;
+                });
+                Navigator.pop(context);
+              },
+            ),
+            const Divider(),
+            ListTile(
+              leading: const Icon(Icons.analytics),
+              title: const Text('Admin Dashboard'),
+              selected: _selectedIndex == 6,
+              onTap: () {
+                setState(() {
+                  _selectedIndex = 6;
                 });
                 Navigator.pop(context);
               },

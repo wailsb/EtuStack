@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'dart:math' as math;
 import '../services/database_helper_new.dart';
+import '../services/database_helper_dashboard.dart';
 import '../utils/app_constants.dart';
 
 class AdminDashboardScreen extends StatefulWidget {
@@ -14,6 +15,7 @@ class AdminDashboardScreen extends StatefulWidget {
 
 class _AdminDashboardScreenState extends State<AdminDashboardScreen> with SingleTickerProviderStateMixin {
   final DatabaseHelper _dbHelper = DatabaseHelper();
+  final DatabaseHelperDashboard _dashboardHelper = DatabaseHelperDashboard();
   late TabController _tabController;
   bool _isLoading = true;
   
@@ -27,11 +29,13 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Single
   List<Map<String, dynamic>> _topProducts = [];
   List<Map<String, dynamic>> _topClients = [];
   List<Map<String, dynamic>> _monthlySales = [];
+  List<Map<String, dynamic>> _recentReceipts = [];
+  List<Map<String, dynamic>> _productInventoryAlerts = [];
   
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 5, vsync: this);
     _loadDashboardData();
   }
   
@@ -47,6 +51,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Single
     });
     
     try {
+      // Initialize dashboard database helper
+      await _dashboardHelper.initialize();
+      
       // Format dates for SQLite
       final startDateStr = DateFormat('yyyy-MM-dd').format(_startDate);
       final endDateStr = DateFormat('yyyy-MM-dd').format(_endDate.add(const Duration(days: 1)));
@@ -59,9 +66,14 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Single
       final topProductsData = await _dbHelper.getTopSellingProducts(5);
       final topClientsData = await _dbHelper.getTopClients(5);
       
-      // Monthly sales would normally come from the DB, but for demo purposes,
-      // we'll generate some random data for the past 6 months
-      final monthlySales = _generateMonthlySalesData();
+      // Get recent receipts from dashboard helper
+      final receiptData = await _dashboardHelper.getReceiptsWithDetails(10);
+      
+      // Get inventory alerts (products with low stock) from dashboard helper
+      final inventoryAlerts = await _dashboardHelper.getProductsWithLowStock(10);
+      
+      // Get monthly sales data from dashboard helper
+      final monthlySales = await _dashboardHelper.getMonthlySalesSummary(6);
       
       setState(() {
         _totalRevenue = revenue;
@@ -69,6 +81,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Single
         _topProducts = topProductsData['products'] as List<Map<String, dynamic>>;
         _topClients = topClientsData['clients'] as List<Map<String, dynamic>>;
         _monthlySales = monthlySales;
+        _recentReceipts = receiptData['receipts'] as List<Map<String, dynamic>>;
+        _productInventoryAlerts = inventoryAlerts;
         _isLoading = false;
       });
     } catch (e) {
@@ -80,33 +94,13 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Single
         SnackBar(
           content: Text('Error loading dashboard data: $e'),
           backgroundColor: AppConstants.errorColor,
+          duration: const Duration(seconds: 5),
         ),
       );
     }
   }
   
-  List<Map<String, dynamic>> _generateMonthlySalesData() {
-    final List<Map<String, dynamic>> result = [];
-    final now = DateTime.now();
-    
-    for (int i = 5; i >= 0; i--) {
-      final month = now.month - i;
-      final year = now.year + (month <= 0 ? -1 : 0);
-      final adjustedMonth = month <= 0 ? month + 12 : month;
-      
-      final date = DateTime(year, adjustedMonth);
-      final revenue = 1000.0 + (DateTime.now().millisecondsSinceEpoch % 5000).toDouble();
-      final profit = revenue * 0.3;
-      
-      result.add({
-        'date': date,
-        'revenue': revenue,
-        'profit': profit,
-      });
-    }
-    
-    return result;
-  }
+  // Method replaced by DatabaseHelperDashboard.getMonthlySalesSummary
   
   Future<void> _selectDateRange(BuildContext context) async {
     final DateTimeRange? picked = await showDateRangePicker(
@@ -208,13 +202,17 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Single
                 // Tab Bar for different statistics
                 TabBar(
                   controller: _tabController,
-                  labelColor: AppConstants.primaryColor,
-                  unselectedLabelColor: Colors.grey,
+                  isScrollable: true,
                   tabs: const [
                     Tab(text: 'Sales Trends'),
                     Tab(text: 'Top Products'),
                     Tab(text: 'Top Clients'),
+                    Tab(text: 'Receipt History'),
+                    Tab(text: 'Inventory Alerts'),
                   ],
+                  labelColor: AppConstants.primaryColor,
+                  unselectedLabelColor: Colors.grey,
+                  indicatorColor: AppConstants.primaryColor,
                 ),
                 
                 // Tab content
@@ -225,6 +223,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Single
                       _buildSalesTrendsTab(),
                       _buildTopProductsTab(),
                       _buildTopClientsTab(),
+                      _buildReceiptHistoryTab(),
+                      _buildInventoryAlertsTab(),
                     ],
                   ),
                 ),
@@ -518,15 +518,204 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Single
   
   Widget _buildLegendItem(String label, Color color) {
     return Row(
+      mainAxisSize: MainAxisSize.min,
       children: [
         Container(
           width: 16,
           height: 16,
           color: color,
         ),
-        const SizedBox(width: 4),
+        const SizedBox(width: 8),
         Text(label),
       ],
     );
+  }
+  
+  Widget _buildReceiptHistoryTab() {
+    return _recentReceipts.isEmpty
+        ? const Center(child: Text('No recent receipts found'))
+        : Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Text(
+                  'Recent Receipts',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+              ),
+              Expanded(
+                child: ListView.builder(
+                  itemCount: _recentReceipts.length,
+                  itemBuilder: (context, index) {
+                    final receipt = _recentReceipts[index];
+                    final date = DateTime.parse(receipt['date'] as String);
+                    final formattedDate = DateFormat('MMM d, y h:mm a').format(date);
+                    
+                    return Card(
+                      margin: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                      child: Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  'Receipt #${receipt['id']}',
+                                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                    color: AppConstants.primaryColor,
+                                  ),
+                                ),
+                                Text(
+                                  formattedDate,
+                                  style: Theme.of(context).textTheme.bodyMedium,
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text('Client: ${receipt['client_name'] ?? 'N/A'}'),
+                                Text(
+                                  'Total: \$${(receipt['total'] as num).toStringAsFixed(2)}',
+                                  style: Theme.of(context).textTheme.titleMedium,
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            const Divider(),
+                            if (receipt['items'] != null)
+                              ...(receipt['items'] as List<Map<String, dynamic>>).map((item) => Padding(
+                                padding: const EdgeInsets.symmetric(vertical: 4.0),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Expanded(
+                                      flex: 3,
+                                      child: Text(item['product_name'] as String),
+                                    ),
+                                    Expanded(
+                                      flex: 1,
+                                      child: Text('${item['quantity']} x \$${(item['price'] as num).toStringAsFixed(2)}'),
+                                    ),
+                                    Expanded(
+                                      flex: 1,
+                                      child: Text('\$${(item['total'] as num).toStringAsFixed(2)}', textAlign: TextAlign.end),
+                                    ),
+                                  ],
+                                ),
+                              )).toList(),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          );
+  }
+  
+  Widget _buildInventoryAlertsTab() {
+    return _productInventoryAlerts.isEmpty
+        ? const Center(child: Text('No inventory alerts'))
+        : Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Text(
+                  'Low Stock Alerts',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+              ),
+              Expanded(
+                child: ListView.builder(
+                  itemCount: _productInventoryAlerts.length,
+                  itemBuilder: (context, index) {
+                    final product = _productInventoryAlerts[index];
+                    final stockLevel = product['quantity'] as int;
+                    final threshold = product['min_stock_threshold'] as int? ?? 10;
+                    final stockPercentage = (stockLevel / threshold) * 100;
+                    
+                    return Card(
+                      margin: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                      child: Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    product['name'] as String,
+                                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
+                                  decoration: BoxDecoration(
+                                    color: stockLevel < threshold / 2 ? Colors.red.shade100 : Colors.amber.shade100,
+                                    borderRadius: BorderRadius.circular(4.0),
+                                  ),
+                                  child: Text(
+                                    'Stock: $stockLevel',
+                                    style: TextStyle(
+                                      color: stockLevel < threshold / 2 ? Colors.red.shade800 : Colors.amber.shade800,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Text('Category: ${product['category_name'] ?? 'Uncategorized'}'),
+                            const SizedBox(height: 8),
+                            LinearProgressIndicator(
+                              value: stockPercentage / 100,
+                              backgroundColor: Colors.grey.shade200,
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                stockLevel < threshold / 2 ? Colors.red : Colors.amber,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text('Min threshold: $threshold'),
+                                OutlinedButton.icon(
+                                  onPressed: () {
+                                    // Navigate to product detail or directly restock
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text('Restock functionality coming soon'),
+                                        duration: Duration(seconds: 2),
+                                      ),
+                                    );
+                                  },
+                                  icon: const Icon(Icons.add_shopping_cart),
+                                  label: const Text('Restock'),
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: AppConstants.primaryColor,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          );
   }
 }
