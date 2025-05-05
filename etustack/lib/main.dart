@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'screens/home_screen.dart';
+import 'screens/license_screen.dart';
 import 'services/cart_provider.dart';
+import 'services/license_service.dart';
 import 'utils/app_constants.dart';
-import 'services/database_helper_new.dart';
+import 'services/database_helper.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -18,11 +20,16 @@ void main() async {
     // We'll handle this gracefully
   }
   
-  runApp(const MyApp());
+  // Check if license is already active
+  final hasLicense = await LicenseService.isLicenseActive();
+  
+  runApp(MyApp(hasValidLicense: hasLicense));
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+  final bool hasValidLicense;
+  
+  const MyApp({super.key, required this.hasValidLicense});
 
   @override
   Widget build(BuildContext context) {
@@ -33,7 +40,8 @@ class MyApp extends StatelessWidget {
       child: MaterialApp(
         title: 'EtuStack Inventory',
         theme: AppConstants.appTheme,
-        home: const HomeScreen(),
+        // Show LicenseScreen if no valid license, otherwise show HomeScreen
+        home: hasValidLicense ? const HomeScreen() : const LicenseScreen(),
         debugShowCheckedModeBanner: false,
       ),
     );

@@ -343,6 +343,8 @@ class DatabaseHelper {
   }
 
   Future<Product?> getProductByBarcode(String barcode) async {
+    if (barcode.isEmpty) return null;
+  
     return _executeDbOperation<Product?>(
       dbOperation: (Database db) async {
         final List<Map<String, dynamic>> maps = await db.query(
@@ -386,6 +388,36 @@ class DatabaseHelper {
         return 0;
       },
     );
+  }
+  
+  /// Updates the quantity of a product by its ID
+  /// Returns the number of rows affected
+  Future<int> updateProductQuantity(int productId, int quantityChange) async {
+    // First get the current product
+    final product = await getProductById(productId);
+    if (product == null) return 0;
+    
+    // Update the quantity
+    product.quantity += quantityChange;
+    
+    // Save the updated product
+    return updateProduct(product);
+  }
+  
+  /// Handles a product with a scanned barcode
+  /// If the product exists, it returns the existing product
+  /// If quantityChange is provided, it updates the product quantity
+  Future<Product?> handleScannedBarcode(String barcode, {int quantityChange = 0}) async {
+    if (barcode.isEmpty) return null;
+    
+    final product = await getProductByBarcode(barcode);
+    
+    if (product != null && quantityChange != 0) {
+      product.quantity += quantityChange;
+      await updateProduct(product);
+    }
+    
+    return product;
   }
 
   Future<int> deleteProduct(int id) async {

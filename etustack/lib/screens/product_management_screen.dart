@@ -5,12 +5,14 @@ import '../models/product.dart';
 import '../models/category.dart';
 import '../models/supplier.dart';
 import '../utils/app_constants.dart';
+import 'product_scanner_screen.dart';
 
 class ProductManagementScreen extends StatefulWidget {
   const ProductManagementScreen({Key? key}) : super(key: key);
 
   @override
-  State<ProductManagementScreen> createState() => _ProductManagementScreenState();
+  State<ProductManagementScreen> createState() =>
+      _ProductManagementScreenState();
 }
 
 class _ProductManagementScreenState extends State<ProductManagementScreen> {
@@ -58,14 +60,36 @@ class _ProductManagementScreenState extends State<ProductManagementScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final filteredProducts = _products.where((product) {
-      final searchLower = _searchQuery.toLowerCase();
-      return product.name.toLowerCase().contains(searchLower) ||
-          (product.barcode?.toLowerCase() ?? '').contains(searchLower) ||
-          (product.description?.toLowerCase() ?? '').contains(searchLower);
-    }).toList();
+    final filteredProducts =
+        _products.where((product) {
+          final searchLower = _searchQuery.toLowerCase();
+          return product.name.toLowerCase().contains(searchLower) ||
+              (product.barcode?.toLowerCase() ?? '').contains(searchLower) ||
+              (product.description?.toLowerCase() ?? '').contains(searchLower);
+        }).toList();
+
+    filteredProducts.sort(
+      (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+    );
 
     return Scaffold(
+      floatingActionButton: Column(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          FloatingActionButton(
+            heroTag: 'scan',
+            onPressed: _scanBarcode,
+            backgroundColor: Colors.amber,
+            child: const Icon(Icons.qr_code_scanner),
+          ),
+          const SizedBox(height: 16),
+          FloatingActionButton(
+            heroTag: 'add',
+            onPressed: _addProduct,
+            child: const Icon(Icons.add),
+          ),
+        ],
+      ),
       body: Column(
         children: [
           Padding(
@@ -84,149 +108,202 @@ class _ProductManagementScreenState extends State<ProductManagementScreen> {
             ),
           ),
           Expanded(
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : filteredProducts.isEmpty
-                    ? const Center(
-                        child: Text('No products found'),
-                      )
+            child:
+                _isLoading
+                    ? const Center(child: CircularProgressIndicator())
+                    : filteredProducts.isEmpty
+                    ? const Center(child: Text('No products found'))
                     : RefreshIndicator(
-                        onRefresh: _loadData,
-                        child: ListView.builder(
-                          itemCount: filteredProducts.length,
-                          itemBuilder: (context, index) {
-                            final product = filteredProducts[index];
-                            
-                            // Find category and supplier names
-                            final categoryName = product.categoryId != null
-                                ? _categories
-                                    .firstWhere(
-                                      (cat) => cat.id == product.categoryId,
-                                      orElse: () => Category(name: 'Unknown'),
-                                    )
-                                    .name
-                                : 'None';
-                                
-                            final supplierName = product.supplierId != null
-                                ? _suppliers
-                                    .firstWhere(
-                                      (supp) => supp.id == product.supplierId,
-                                      orElse: () => Supplier(name: 'Unknown'),
-                                    )
-                                    .name
-                                : 'None';
+                      onRefresh: _loadData,
+                      child: ListView.builder(
+                        itemCount: filteredProducts.length,
+                        itemBuilder: (context, index) {
+                          final product = filteredProducts[index];
 
-                            return Slidable(
-                              endActionPane: ActionPane(
-                                motion: const ScrollMotion(),
-                                children: [
-                                  SlidableAction(
-                                    onPressed: (context) {
-                                      _editProduct(product);
-                                    },
-                                    backgroundColor: Colors.blue,
-                                    foregroundColor: Colors.white,
-                                    icon: Icons.edit,
-                                    label: 'Edit',
-                                  ),
-                                  SlidableAction(
-                                    onPressed: (context) {
-                                      _deleteProduct(product);
-                                    },
-                                    backgroundColor: Colors.red,
-                                    foregroundColor: Colors.white,
-                                    icon: Icons.delete,
-                                    label: 'Delete',
-                                  ),
-                                ],
-                              ),
-                              child: Card(
-                                margin: const EdgeInsets.symmetric(
-                                  horizontal: 16,
-                                  vertical: 4,
-                                ),
-                                child: ListTile(
-                                  leading: CircleAvatar(
-                                    backgroundColor: AppConstants.primaryColor,
-                                    child: Text(
-                                      product.name.substring(0, 1),
-                                      style: const TextStyle(color: Colors.white),
-                                    ),
-                                  ),
-                                  title: Text(product.name),
-                                  subtitle: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      if (product.barcode != null)
-                                        Text('Barcode: ${product.barcode}'),
-                                      Text('Category: $categoryName'),
-                                      Text('Supplier: $supplierName'),
-                                    ],
-                                  ),
-                                  trailing: Column(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    crossAxisAlignment: CrossAxisAlignment.end,
-                                    children: [
-                                      Text(
-                                        '\$${product.sellPrice?.toStringAsFixed(2) ?? 'N/A'}',
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 16,
-                                        ),
-                                      ),
-                                      Text(
-                                        'Qty: ${product.quantity}',
-                                        style: TextStyle(
-                                          color: product.quantity > 0
-                                              ? AppConstants.successColor
-                                              : AppConstants.errorColor,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  onTap: () {
-                                    _viewProduct(product);
+                          // Find category and supplier names
+                          final categoryName =
+                              product.categoryId != null
+                                  ? _categories
+                                      .firstWhere(
+                                        (cat) => cat.id == product.categoryId,
+                                        orElse: () => Category(name: 'Unknown'),
+                                      )
+                                      .name
+                                  : 'None';
+
+                          final supplierName =
+                              product.supplierId != null
+                                  ? _suppliers
+                                      .firstWhere(
+                                        (supp) => supp.id == product.supplierId,
+                                        orElse: () => Supplier(name: 'Unknown'),
+                                      )
+                                      .name
+                                  : 'None';
+
+                          return Slidable(
+                            endActionPane: ActionPane(
+                              motion: const ScrollMotion(),
+                              children: [
+                                SlidableAction(
+                                  onPressed: (context) {
+                                    _editProduct(product);
                                   },
+                                  backgroundColor: Colors.blue,
+                                  foregroundColor: Colors.white,
+                                  icon: Icons.edit,
+                                  label: 'Edit',
                                 ),
+                                SlidableAction(
+                                  onPressed: (context) {
+                                    _deleteProduct(product);
+                                  },
+                                  backgroundColor: Colors.red,
+                                  foregroundColor: Colors.white,
+                                  icon: Icons.delete,
+                                  label: 'Delete',
+                                ),
+                              ],
+                            ),
+                            child: Card(
+                              margin: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 4,
                               ),
-                            );
-                          },
-                        ),
+                              child: ListTile(
+                                leading: CircleAvatar(
+                                  backgroundColor: AppConstants.primaryColor,
+                                  child: Text(
+                                    product.name.substring(0, 1),
+                                    style: const TextStyle(color: Colors.white),
+                                  ),
+                                ),
+                                title: Text(product.name),
+                                subtitle: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    if (product.barcode != null)
+                                      Text('Barcode: ${product.barcode}'),
+                                    Text('Category: $categoryName'),
+                                    Text('Supplier: $supplierName'),
+                                  ],
+                                ),
+                                trailing: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  crossAxisAlignment: CrossAxisAlignment.end,
+                                  children: [
+                                    Text(
+                                      '\$${product.sellPrice?.toStringAsFixed(2) ?? 'N/A'}',
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 16,
+                                      ),
+                                    ),
+                                    Text(
+                                      'Qty: ${product.quantity}',
+                                      style: TextStyle(
+                                        color:
+                                            product.quantity > 0
+                                                ? AppConstants.successColor
+                                                : AppConstants.errorColor,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                onTap: () {
+                                  _viewProduct(product);
+                                },
+                              ),
+                            ),
+                          );
+                        },
                       ),
+                    ),
           ),
         ],
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _addProduct,
-        tooltip: 'Add Product',
-        child: const Icon(Icons.add),
       ),
     );
   }
 
-  void _addProduct() {
-    Navigator.push(
+  Future<void> _addProduct() async {
+    final result = await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => ProductFormScreen(
-          categories: _categories,
-          suppliers: _suppliers,
-          onProductSaved: _loadData,
-        ),
+        builder:
+            (context) => ProductFormScreen(
+              categories: _categories,
+              suppliers: _suppliers,
+              onProductSaved: _loadData,
+            ),
       ),
     );
+
+    if (result == true) {
+      _loadData();
+    }
+  }
+
+  Future<void> _scanBarcode() async {
+    // Show scanner screen
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder:
+            (context) => ProductScannerScreen(
+              onProductFound: (product) {
+                // Product found but no specific action needed for navigation
+              },
+              onProductUpdated: (product) {
+                // Update the product list with the updated product
+                setState(() {
+                  final index = _products.indexWhere((p) => p.id == product.id);
+                  if (index != -1) {
+                    _products[index] = product;
+                  }
+                });
+              },
+            ),
+      ),
+    );
+
+    // Check if we need to create a new product with scanned barcode
+    if (result != null && result['create'] == true) {
+      // Get the barcode from the scan result
+      final String barcode = result['barcode'] as String;
+      debugPrint('Creating new product with barcode: $barcode');
+
+      // Navigate to product form with pre-filled barcode
+      final addResult = await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder:
+              (context) => ProductFormScreen(
+                initialBarcode: barcode,
+                categories: _categories,
+                suppliers: _suppliers,
+                onProductSaved: _loadData,
+              ),
+        ),
+      );
+
+      if (addResult == true) {
+        _loadData();
+      }
+    }
   }
 
   void _editProduct(Product product) {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => ProductFormScreen(
-          product: product,
-          categories: _categories,
-          suppliers: _suppliers,
-          onProductSaved: _loadData,
-        ),
+        builder:
+            (context) => ProductFormScreen(
+              product: product,
+              isEditing: true,
+              categories: _categories,
+              suppliers: _suppliers,
+              onProductSaved: _loadData,
+            ),
       ),
     );
   }
@@ -235,25 +312,28 @@ class _ProductManagementScreenState extends State<ProductManagementScreen> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => ProductDetailScreen(
-          product: product,
-          categoryName: product.categoryId != null
-              ? _categories
-                  .firstWhere(
-                    (cat) => cat.id == product.categoryId,
-                    orElse: () => Category(name: 'Unknown'),
-                  )
-                  .name
-              : 'None',
-          supplierName: product.supplierId != null
-              ? _suppliers
-                  .firstWhere(
-                    (supp) => supp.id == product.supplierId,
-                    orElse: () => Supplier(name: 'Unknown'),
-                  )
-                  .name
-              : 'None',
-        ),
+        builder:
+            (context) => ProductDetailScreen(
+              product: product,
+              categoryName:
+                  product.categoryId != null
+                      ? _categories
+                          .firstWhere(
+                            (cat) => cat.id == product.categoryId,
+                            orElse: () => Category(name: 'Unknown'),
+                          )
+                          .name
+                      : 'None',
+              supplierName:
+                  product.supplierId != null
+                      ? _suppliers
+                          .firstWhere(
+                            (supp) => supp.id == product.supplierId,
+                            orElse: () => Supplier(name: 'Unknown'),
+                          )
+                          .name
+                      : 'None',
+            ),
       ),
     );
   }
@@ -261,41 +341,42 @@ class _ProductManagementScreenState extends State<ProductManagementScreen> {
   void _deleteProduct(Product product) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Delete Product'),
-        content: Text('Are you sure you want to delete ${product.name}?'),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.of(context).pop();
-            },
-            child: const Text('Cancel'),
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Delete Product'),
+            content: Text('Are you sure you want to delete ${product.name}?'),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Navigator.of(context).pop();
+                },
+                child: const Text('Cancel'),
+              ),
+              TextButton(
+                onPressed: () async {
+                  Navigator.of(context).pop();
+                  try {
+                    await _dbHelper.deleteProduct(product.id!);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Product deleted successfully'),
+                        backgroundColor: AppConstants.successColor,
+                      ),
+                    );
+                    _loadData();
+                  } catch (e) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Error deleting product: $e'),
+                        backgroundColor: AppConstants.errorColor,
+                      ),
+                    );
+                  }
+                },
+                child: const Text('Delete'),
+              ),
+            ],
           ),
-          TextButton(
-            onPressed: () async {
-              Navigator.of(context).pop();
-              try {
-                await _dbHelper.deleteProduct(product.id!);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Product deleted successfully'),
-                    backgroundColor: AppConstants.successColor,
-                  ),
-                );
-                _loadData();
-              } catch (e) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('Error deleting product: $e'),
-                    backgroundColor: AppConstants.errorColor,
-                  ),
-                );
-              }
-            },
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
     );
   }
 }
@@ -303,6 +384,8 @@ class _ProductManagementScreenState extends State<ProductManagementScreen> {
 // Product Form Screen for adding and editing products
 class ProductFormScreen extends StatefulWidget {
   final Product? product;
+  final bool isEditing;
+  final String? initialBarcode;
   final List<Category> categories;
   final List<Supplier> suppliers;
   final Function onProductSaved;
@@ -310,6 +393,8 @@ class ProductFormScreen extends StatefulWidget {
   const ProductFormScreen({
     Key? key,
     this.product,
+    this.isEditing = false,
+    this.initialBarcode,
     required this.categories,
     required this.suppliers,
     required this.onProductSaved,
@@ -335,7 +420,9 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
   @override
   void initState() {
     super.initState();
-    if (widget.product != null) {
+
+    if (widget.isEditing && widget.product != null) {
+      // Editing existing product
       _nameController.text = widget.product!.name;
       _barcodeController.text = widget.product!.barcode ?? '';
       _descriptionController.text = widget.product!.description ?? '';
@@ -345,7 +432,14 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
       _selectedCategoryId = widget.product!.categoryId;
       _selectedSupplierId = widget.product!.supplierId;
     } else {
+      // Creating new product
       _quantityController.text = '0';
+
+      // Pre-fill barcode if provided
+      if (widget.initialBarcode != null && widget.initialBarcode!.isNotEmpty) {
+        debugPrint('Setting barcode: ${widget.initialBarcode}');
+        _barcodeController.text = widget.initialBarcode!;
+      }
     }
   }
 
@@ -364,173 +458,174 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.product == null ? 'Add Product' : 'Edit Product'),
+        title: Text(widget.isEditing ? 'Edit Product' : 'Add Product'),
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : SingleChildScrollView(
-              padding: const EdgeInsets.all(16),
-              child: Form(
-                key: _formKey,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    TextFormField(
-                      controller: _nameController,
-                      decoration: const InputDecoration(
-                        labelText: 'Product Name',
-                        border: OutlineInputBorder(),
+      body:
+          _isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : SingleChildScrollView(
+                padding: const EdgeInsets.all(16),
+                child: Form(
+                  key: _formKey,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      TextFormField(
+                        controller: _nameController,
+                        decoration: const InputDecoration(
+                          labelText: 'Product Name',
+                          border: OutlineInputBorder(),
+                        ),
+                        validator: (value) {
+                          if (value == null || value.isEmpty) {
+                            return 'Please enter a product name';
+                          }
+                          return null;
+                        },
                       ),
-                      validator: (value) {
-                        if (value == null || value.isEmpty) {
-                          return 'Please enter a product name';
-                        }
-                        return null;
-                      },
-                    ),
-                    const SizedBox(height: 16),
-                    TextFormField(
-                      controller: _barcodeController,
-                      decoration: const InputDecoration(
-                        labelText: 'Barcode',
-                        border: OutlineInputBorder(),
+                      const SizedBox(height: 16),
+                      TextFormField(
+                        controller: _barcodeController,
+                        decoration: const InputDecoration(
+                          labelText: 'Barcode',
+                          border: OutlineInputBorder(),
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 16),
-                    TextFormField(
-                      controller: _descriptionController,
-                      decoration: const InputDecoration(
-                        labelText: 'Description',
-                        border: OutlineInputBorder(),
+                      const SizedBox(height: 16),
+                      TextFormField(
+                        controller: _descriptionController,
+                        decoration: const InputDecoration(
+                          labelText: 'Description',
+                          border: OutlineInputBorder(),
+                        ),
+                        maxLines: 3,
                       ),
-                      maxLines: 3,
-                    ),
-                    const SizedBox(height: 16),
-                    TextFormField(
-                      controller: _quantityController,
-                      decoration: const InputDecoration(
-                        labelText: 'Quantity',
-                        border: OutlineInputBorder(),
+                      const SizedBox(height: 16),
+                      TextFormField(
+                        controller: _quantityController,
+                        decoration: const InputDecoration(
+                          labelText: 'Quantity',
+                          border: OutlineInputBorder(),
+                        ),
+                        keyboardType: TextInputType.number,
+                        validator: (value) {
+                          if (value == null || value.isEmpty) {
+                            return 'Please enter a quantity';
+                          }
+                          if (int.tryParse(value) == null) {
+                            return 'Please enter a valid number';
+                          }
+                          return null;
+                        },
                       ),
-                      keyboardType: TextInputType.number,
-                      validator: (value) {
-                        if (value == null || value.isEmpty) {
-                          return 'Please enter a quantity';
-                        }
-                        if (int.tryParse(value) == null) {
-                          return 'Please enter a valid number';
-                        }
-                        return null;
-                      },
-                    ),
-                    const SizedBox(height: 16),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: TextFormField(
-                            controller: _buyPriceController,
-                            decoration: const InputDecoration(
-                              labelText: 'Buy Price',
-                              border: OutlineInputBorder(),
-                              prefixText: '\$',
-                            ),
-                            keyboardType: TextInputType.number,
-                            validator: (value) {
-                              if (value != null && value.isNotEmpty) {
-                                if (double.tryParse(value) == null) {
-                                  return 'Please enter a valid price';
+                      const SizedBox(height: 16),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextFormField(
+                              controller: _buyPriceController,
+                              decoration: const InputDecoration(
+                                labelText: 'Buy Price',
+                                border: OutlineInputBorder(),
+                                prefixText: '\$',
+                              ),
+                              keyboardType: TextInputType.number,
+                              validator: (value) {
+                                if (value != null && value.isNotEmpty) {
+                                  if (double.tryParse(value) == null) {
+                                    return 'Please enter a valid price';
+                                  }
                                 }
-                              }
-                              return null;
-                            },
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: TextFormField(
-                            controller: _sellPriceController,
-                            decoration: const InputDecoration(
-                              labelText: 'Sell Price',
-                              border: OutlineInputBorder(),
-                              prefixText: '\$',
+                                return null;
+                              },
                             ),
-                            keyboardType: TextInputType.number,
-                            validator: (value) {
-                              if (value != null && value.isNotEmpty) {
-                                if (double.tryParse(value) == null) {
-                                  return 'Please enter a valid price';
-                                }
-                              }
-                              return null;
-                            },
                           ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: TextFormField(
+                              controller: _sellPriceController,
+                              decoration: const InputDecoration(
+                                labelText: 'Sell Price',
+                                border: OutlineInputBorder(),
+                                prefixText: '\$',
+                              ),
+                              keyboardType: TextInputType.number,
+                              validator: (value) {
+                                if (value != null && value.isNotEmpty) {
+                                  if (double.tryParse(value) == null) {
+                                    return 'Please enter a valid price';
+                                  }
+                                }
+                                return null;
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      DropdownButtonFormField<int>(
+                        value: _selectedCategoryId,
+                        decoration: const InputDecoration(
+                          labelText: 'Category',
+                          border: OutlineInputBorder(),
                         ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    DropdownButtonFormField<int>(
-                      value: _selectedCategoryId,
-                      decoration: const InputDecoration(
-                        labelText: 'Category',
-                        border: OutlineInputBorder(),
+                        items: [
+                          const DropdownMenuItem<int>(
+                            value: null,
+                            child: Text('None'),
+                          ),
+                          ...widget.categories.map((category) {
+                            return DropdownMenuItem<int>(
+                              value: category.id,
+                              child: Text(category.name),
+                            );
+                          }).toList(),
+                        ],
+                        onChanged: (value) {
+                          setState(() {
+                            _selectedCategoryId = value;
+                          });
+                        },
                       ),
-                      items: [
-                        const DropdownMenuItem<int>(
-                          value: null,
-                          child: Text('None'),
+                      const SizedBox(height: 16),
+                      DropdownButtonFormField<int>(
+                        value: _selectedSupplierId,
+                        decoration: const InputDecoration(
+                          labelText: 'Supplier',
+                          border: OutlineInputBorder(),
                         ),
-                        ...widget.categories.map((category) {
-                          return DropdownMenuItem<int>(
-                            value: category.id,
-                            child: Text(category.name),
-                          );
-                        }).toList(),
-                      ],
-                      onChanged: (value) {
-                        setState(() {
-                          _selectedCategoryId = value;
-                        });
-                      },
-                    ),
-                    const SizedBox(height: 16),
-                    DropdownButtonFormField<int>(
-                      value: _selectedSupplierId,
-                      decoration: const InputDecoration(
-                        labelText: 'Supplier',
-                        border: OutlineInputBorder(),
+                        items: [
+                          const DropdownMenuItem<int>(
+                            value: null,
+                            child: Text('None'),
+                          ),
+                          ...widget.suppliers.map((supplier) {
+                            return DropdownMenuItem<int>(
+                              value: supplier.id,
+                              child: Text(supplier.name),
+                            );
+                          }).toList(),
+                        ],
+                        onChanged: (value) {
+                          setState(() {
+                            _selectedSupplierId = value;
+                          });
+                        },
                       ),
-                      items: [
-                        const DropdownMenuItem<int>(
-                          value: null,
-                          child: Text('None'),
+                      const SizedBox(height: 24),
+                      ElevatedButton(
+                        onPressed: _saveProduct,
+                        style: ElevatedButton.styleFrom(
+                          minimumSize: const Size(double.infinity, 50),
                         ),
-                        ...widget.suppliers.map((supplier) {
-                          return DropdownMenuItem<int>(
-                            value: supplier.id,
-                            child: Text(supplier.name),
-                          );
-                        }).toList(),
-                      ],
-                      onChanged: (value) {
-                        setState(() {
-                          _selectedSupplierId = value;
-                        });
-                      },
-                    ),
-                    const SizedBox(height: 24),
-                    ElevatedButton(
-                      onPressed: _saveProduct,
-                      style: ElevatedButton.styleFrom(
-                        minimumSize: const Size(double.infinity, 50),
+                        child: Text(
+                          widget.isEditing ? 'Update Product' : 'Add Product',
+                        ),
                       ),
-                      child: Text(
-                        widget.product == null ? 'Add Product' : 'Update Product',
-                      ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
-            ),
     );
   }
 
@@ -544,19 +639,23 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
         final product = Product(
           id: widget.product?.id,
           name: _nameController.text.trim(),
-          barcode: _barcodeController.text.trim().isNotEmpty
-              ? _barcodeController.text.trim()
-              : null,
-          description: _descriptionController.text.trim().isNotEmpty
-              ? _descriptionController.text.trim()
-              : null,
+          barcode:
+              _barcodeController.text.trim().isNotEmpty
+                  ? _barcodeController.text.trim()
+                  : null,
+          description:
+              _descriptionController.text.trim().isNotEmpty
+                  ? _descriptionController.text.trim()
+                  : null,
           quantity: int.parse(_quantityController.text.trim()),
-          buyPrice: _buyPriceController.text.trim().isNotEmpty
-              ? double.parse(_buyPriceController.text.trim())
-              : null,
-          sellPrice: _sellPriceController.text.trim().isNotEmpty
-              ? double.parse(_sellPriceController.text.trim())
-              : null,
+          buyPrice:
+              _buyPriceController.text.trim().isNotEmpty
+                  ? double.parse(_buyPriceController.text.trim())
+                  : null,
+          sellPrice:
+              _sellPriceController.text.trim().isNotEmpty
+                  ? double.parse(_sellPriceController.text.trim())
+                  : null,
           categoryId: _selectedCategoryId,
           supplierId: _selectedSupplierId,
         );
@@ -580,7 +679,7 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
         }
 
         widget.onProductSaved();
-        Navigator.of(context).pop();
+        Navigator.of(context).pop(true);
       } catch (e) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -613,9 +712,7 @@ class ProductDetailScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text(product.name),
-      ),
+      appBar: AppBar(title: Text(product.name)),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -655,21 +752,30 @@ class ProductDetailScreen extends StatelessWidget {
                       style: AppConstants.subheadingStyle,
                     ),
                     const Divider(),
-                    _buildInfoRow('Quantity', product.quantity.toString(),
-                        valueColor: product.quantity > 0
-                            ? AppConstants.successColor
-                            : AppConstants.errorColor),
+                    _buildInfoRow(
+                      'Quantity',
+                      product.quantity.toString(),
+                      valueColor:
+                          product.quantity > 0
+                              ? AppConstants.successColor
+                              : AppConstants.errorColor,
+                    ),
                     if (product.buyPrice != null)
                       _buildInfoRow(
-                          'Buy Price', '\$${product.buyPrice!.toStringAsFixed(2)}'),
+                        'Buy Price',
+                        '\$${product.buyPrice!.toStringAsFixed(2)}',
+                      ),
                     if (product.sellPrice != null)
                       _buildInfoRow(
-                          'Sell Price', '\$${product.sellPrice!.toStringAsFixed(2)}'),
+                        'Sell Price',
+                        '\$${product.sellPrice!.toStringAsFixed(2)}',
+                      ),
                     if (product.profit != null)
                       _buildInfoRow(
-                          'Profit Margin',
-                          '${product.profitMargin!.toStringAsFixed(2)}%',
-                          valueColor: AppConstants.successColor),
+                        'Profit Margin',
+                        '${product.profitMargin!.toStringAsFixed(2)}%',
+                        valueColor: AppConstants.successColor,
+                      ),
                   ],
                 ),
               ),
