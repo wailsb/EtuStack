@@ -370,8 +370,7 @@ class _ReceiptFormScreenState extends State<ReceiptFormScreen> {
           receiptId: 0, // Will be updated when saving
           productId: product.id!,
           quantity: quantity,
-          priceAtSale: priceAtSale,
-          total: priceAtSale * quantity,
+          price: priceAtSale,
         ));
       });
       
@@ -393,6 +392,7 @@ class _ReceiptFormScreenState extends State<ReceiptFormScreen> {
         final receipt = Receipt(
           date: DateTime.now(),
           clientId: _selectedClient?.id,
+          type: 'sale', // Added required type field
           totalAmount: _totalAmount,
           status: 'pending',
         );
@@ -406,8 +406,7 @@ class _ReceiptFormScreenState extends State<ReceiptFormScreen> {
             receiptId: receiptId,
             productId: item.productId,
             quantity: item.quantity,
-            priceAtSale: item.priceAtSale,
-            total: item.total,
+            price: item.price,
           );
           await _dbHelper.insertReceiptItem(receiptItem);
           
@@ -506,7 +505,7 @@ class _ReceiptFormScreenState extends State<ReceiptFormScreen> {
                               
                               return ListTile(
                                 title: Text(product.name),
-                                subtitle: Text('${item.quantity} x \$${item.priceAtSale.toStringAsFixed(2)}'),
+                                subtitle: Text('${item.quantity} x \$${item.price.toStringAsFixed(2)}'),
                                 trailing: Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [

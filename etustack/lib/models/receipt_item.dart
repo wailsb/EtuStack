@@ -3,17 +3,18 @@ class ReceiptItem {
   int receiptId;
   int productId;
   int quantity;
-  double priceAtSale;
-  double total;
+  double price;
 
   ReceiptItem({
     this.id,
     required this.receiptId,
     required this.productId,
     required this.quantity,
-    required this.priceAtSale,
-    required this.total,
+    required this.price,
   });
+
+  // Calculate the total price for this item
+  double get total => price * quantity;
 
   Map<String, dynamic> toMap() {
     return {
@@ -21,8 +22,7 @@ class ReceiptItem {
       'receipt_id': receiptId,
       'product_id': productId,
       'quantity': quantity,
-      'price_at_sale': priceAtSale,
-      'total': total,
+      'price': price,
     };
   }
 
@@ -31,9 +31,8 @@ class ReceiptItem {
       id: map['id'],
       receiptId: map['receipt_id'],
       productId: map['product_id'],
-      quantity: map['quantity'],
-      priceAtSale: map['price_at_sale'] != null ? map['price_at_sale'].toDouble() : 0.0,
-      total: map['total'] != null ? map['total'].toDouble() : 0.0,
+      quantity: map['quantity'] ?? 1,
+      price: map['price'] != null ? (map['price'] as num).toDouble() : 0.0,
     );
   }
 }
