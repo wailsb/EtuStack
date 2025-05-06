@@ -6,18 +6,19 @@ import 'services/cart_provider.dart';
 import 'services/license_service.dart';
 import 'utils/app_constants.dart';
 import 'services/database_helper.dart';
+// import 'services/database_helper_receipt.dart'; // Removed, now merged
+// import 'services/database_helper_dashboard.dart'; // Keeping for compatibility but functionality is in main helper
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Initialize the database
+  // Initialize the unified database helper
   try {
-    // Initialize the main database
+    // Initialize the merged database helper
     final dbHelper = DatabaseHelper();
-    await dbHelper.database; // This will create the database if it doesn't exist
-    await dbHelper.initialize(); // Additional check for tables
+    await dbHelper.initialize(); // This will handle all tables and functionality
     
-    print('Database initialization completed successfully');
+    print('Database helper initialized successfully');
   } catch (e) {
     print('Database initialization error: $e');
     // In web, we might get errors with certain plugins

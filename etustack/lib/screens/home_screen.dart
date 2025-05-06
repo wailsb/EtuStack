@@ -191,7 +191,12 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
         ),
       ),
-      body: _pages[_selectedIndex],
+      // Set resizeToAvoidBottomInset to true to properly handle keyboard
+      resizeToAvoidBottomInset: true,
+      // Use SafeArea to respect system UI elements
+      body: SafeArea(
+        child: _pages[_selectedIndex],
+      ),
       floatingActionButton: _selectedIndex == 0
           ? FloatingActionButton(
               onPressed: () {
@@ -215,78 +220,109 @@ class MainDashboard extends StatelessWidget {
   Widget build(BuildContext context) {
     // Get reference to the home screen state
     final homeScreenState = context.findAncestorStateOfType<_HomeScreenState>();
+    // Get the available screen height (accounting for keyboard)
+    final availableHeight = MediaQuery.of(context).size.height - 
+                          MediaQuery.of(context).padding.top - 
+                          MediaQuery.of(context).padding.bottom - 
+                          kToolbarHeight;
+    
     return Column(
       children: [
         Expanded(
           child: SingleChildScrollView(
             padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Welcome to EtuStack Inventory',
-                  style: AppConstants.headingStyle,
-                ),
-                const SizedBox(height: 16),
-                const Text(
-                  'Your all-in-one inventory management solution',
-                  style: AppConstants.subheadingStyle,
-                ),
-                const SizedBox(height: 24),
-                GridView.count(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  crossAxisCount: 2,
-                  crossAxisSpacing: 16,
-                  mainAxisSpacing: 16,
-                  children: [
-                    _buildFeatureCard(
-                      context,
-                      Icons.qr_code_scanner,
-                      'Scan Products',
-                      'Scan barcodes to add products to cart',
-                      () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (context) => const ScannerScreen()),
-                        );
-                      },
-                    ),
-                    _buildFeatureCard(
-                      context,
-                      Icons.shopping_cart,
-                      'Current Cart',
-                      'View and manage your cart',
-                      () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (context) => const CartScreen()),
-                        );
-                      },
-                    ),
-                    _buildFeatureCard(
-                      context,
-                      Icons.inventory,
-                      'Products',
-                      'Manage your product inventory',
-                      () {
-                        // Use callback to navigate to products screen
-                        homeScreenState?.navigateTo(1);
-                      },
-                    ),
-                    _buildFeatureCard(
-                      context,
-                      Icons.analytics,
-                      'Analytics',
-                      'View sales data and reports',
-                      () {
-                        // Use callback to navigate to admin dashboard
-                        homeScreenState?.navigateTo(5);
-                      },
-                    ),
-                  ],
-                ),
-              ],
+            physics: const AlwaysScrollableScrollPhysics(), // Ensure always scrollable even with small content
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                minHeight: availableHeight - 32, // 32 for the padding
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Welcome to EtuStack Inventory',
+                    style: AppConstants.headingStyle,
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Your all-in-one inventory management solution',
+                    style: AppConstants.subheadingStyle,
+                  ),
+                  const SizedBox(height: 24),
+                  // Use LayoutBuilder to make responsive grid based on screen width
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      // Determine grid cross axis count based on width
+                      final crossAxisCount = constraints.maxWidth > 600 ? 3 : 2;
+                      return GridView.builder(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: crossAxisCount,
+                          crossAxisSpacing: 16,
+                          mainAxisSpacing: 16,
+                          // Adjust aspect ratio to better fit content
+                          childAspectRatio: constraints.maxWidth > 600 ? 1.2 : 1.0,
+                        ),
+                        itemCount: 4, // Number of cards
+                        itemBuilder: (context, index) {
+                          // Define card data
+                          final cardData = [
+                            {
+                              'icon': Icons.qr_code_scanner,
+                              'title': 'Scan Products',
+                              'subtitle': 'Scan barcodes to add products to cart',
+                              'onTap': () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(builder: (context) => const ScannerScreen()),
+                                );
+                              },
+                            },
+                            {
+                              'icon': Icons.shopping_cart,
+                              'title': 'Current Cart',
+                              'subtitle': 'View and manage your cart',
+                              'onTap': () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(builder: (context) => const CartScreen()),
+                                );
+                              },
+                            },
+                            {
+                              'icon': Icons.inventory,
+                              'title': 'Products',
+                              'subtitle': 'Manage your product inventory',
+                              'onTap': () {
+                                // Use callback to navigate to products screen
+                                homeScreenState?.navigateTo(1);
+                              },
+                            },
+                            {
+                              'icon': Icons.analytics,
+                              'title': 'Analytics',
+                              'subtitle': 'View sales data and reports',
+                              'onTap': () {
+                                // Use callback to navigate to admin dashboard
+                                homeScreenState?.navigateTo(5);
+                              },
+                            },
+                          ];
+                          
+                          return _buildFeatureCard(
+                            context,
+                            cardData[index]['icon'] as IconData,
+                            cardData[index]['title'] as String,
+                            cardData[index]['subtitle'] as String,
+                            cardData[index]['onTap'] as VoidCallback,
+                          );
+                        },
+                      );
+                    },
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -310,20 +346,23 @@ class MainDashboard extends StatelessWidget {
           padding: const EdgeInsets.all(16),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min, // Important to prevent overflow
             children: [
               Icon(
                 icon,
-                size: 48,
+                size: 40, // Slightly smaller for better fit
                 color: AppConstants.primaryColor,
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 12),
               Text(
                 title,
                 style: const TextStyle(
-                  fontSize: 18,
+                  fontSize: 16, // Slightly smaller for better fit
                   fontWeight: FontWeight.bold,
                 ),
                 textAlign: TextAlign.center,
+                maxLines: 1, // Limit to 1 line
+                overflow: TextOverflow.ellipsis, // Handle overflow text
               ),
               const SizedBox(height: 8),
               Text(
@@ -333,6 +372,8 @@ class MainDashboard extends StatelessWidget {
                   color: Colors.grey,
                 ),
                 textAlign: TextAlign.center,
+                maxLines: 2, // Limit to 2 lines
+                overflow: TextOverflow.ellipsis, // Handle overflow text
               ),
             ],
           ),

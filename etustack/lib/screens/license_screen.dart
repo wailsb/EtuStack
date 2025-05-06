@@ -81,82 +81,95 @@ class _LicenseScreenState extends State<LicenseScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      // Configure to resize when keyboard appears
+      resizeToAvoidBottomInset: true,
       body: _isLoading
           ? const Center(
               child: CircularProgressIndicator(),
             )
           : SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.all(24.0),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    const Icon(
-                      Icons.inventory_2,
-                      size: 80,
-                      color: AppConstants.primaryColor,
+              child: SingleChildScrollView(
+                // Add this scroll view to handle overflow when keyboard appears
+                child: Padding(
+                  padding: const EdgeInsets.all(24.0),
+                  child: ConstrainedBox(
+                    // Ensure the content takes at least the full screen height minus padding
+                    constraints: BoxConstraints(
+                      minHeight: MediaQuery.of(context).size.height - 48 - MediaQuery.of(context).padding.top,
                     ),
-                    const SizedBox(height: 24),
-                    const Text(
-                      'EtuStock',
-                      style: TextStyle(
-                        fontSize: 28,
-                        fontWeight: FontWeight.bold,
-                      ),
-                      textAlign: TextAlign.center,
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        const SizedBox(height: 20), // Add some space at the top
+                        const Icon(
+                          Icons.inventory_2,
+                          size: 64, // Slightly smaller than before
+                          color: AppConstants.primaryColor,
+                        ),
+                        const SizedBox(height: 24),
+                        const Text(
+                          'EtuStock',
+                          style: TextStyle(
+                            fontSize: 28,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                        const Text(
+                          'Inventory Management System',
+                          style: TextStyle(
+                            fontSize: 16,
+                            color: Colors.grey,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 36), // Slightly reduced spacing
+                        const Text(
+                          'Enter License Key',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        TextField(
+                          controller: _licenseKeyController,
+                          decoration: InputDecoration(
+                            hintText: 'Format: ES01-XXXXXXXX', // Updated format based on memory
+                            border: const OutlineInputBorder(),
+                            errorText: _errorMessage.isNotEmpty ? _errorMessage : null,
+                          ),
+                        ),
+                        const SizedBox(height: 24),
+                        ElevatedButton(
+                          onPressed: _activateLicense,
+                          style: ElevatedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                          ),
+                          child: const Text(
+                            'Activate License',
+                            style: TextStyle(fontSize: 16),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        const Divider(),
+                        const SizedBox(height: 16),
+                        const Text(
+                          'Need a license key?',
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 8),
+                        const Text(
+                          'Contact the administrator to purchase a license for this software.',
+                          style: TextStyle(color: Colors.grey),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 20), // Add some space at the bottom
+                      ],
                     ),
-                    const Text(
-                      'Inventory Management System',
-                      style: TextStyle(
-                        fontSize: 16,
-                        color: Colors.grey,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 48),
-                    const Text(
-                      'Enter License Key',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    TextField(
-                      controller: _licenseKeyController,
-                      decoration: InputDecoration(
-                        hintText: 'Format: USERNAME-XXXXXXXX',
-                        border: const OutlineInputBorder(),
-                        errorText: _errorMessage.isNotEmpty ? _errorMessage : null,
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-                    ElevatedButton(
-                      onPressed: _activateLicense,
-                      style: ElevatedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                      ),
-                      child: const Text(
-                        'Activate License',
-                        style: TextStyle(fontSize: 16),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    const Divider(),
-                    const SizedBox(height: 16),
-                    const Text(
-                      'Need a license key?',
-                      style: TextStyle(fontWeight: FontWeight.bold),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 8),
-                    const Text(
-                      'Contact the administrator to purchase a license for this software.',
-                      style: TextStyle(color: Colors.grey),
-                      textAlign: TextAlign.center,
-                    ),
-                  ],
+                  ),
                 ),
               ),
             ),
