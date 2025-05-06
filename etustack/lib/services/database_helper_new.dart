@@ -55,8 +55,13 @@ class DatabaseHelper {
           // Try to initialize SQLite for mobile/desktop platforms
           _database = await openDatabase(
             'inventory.db',
-            version: 1,
+            version: 2, // Increased version for schema updates
             onCreate: _createDb,
+            onUpgrade: _onUpgrade,
+            onOpen: (db) async {
+              // Check if all required tables exist
+              await _ensureTablesExist(db);
+            },
           );
           print('SQLite database initialized successfully');
         } catch (e) {
@@ -73,6 +78,178 @@ class DatabaseHelper {
         await _addSampleData();
         _sampleDataAdded = true;
       }
+    }
+  }
+
+  // Ensure all required tables exist
+  Future<void> _ensureTablesExist(Database db) async {
+    // List of all table names
+    final requiredTables = [
+      'categories',
+      'suppliers',
+      'products',
+      'clients',
+      'carts',
+      'cart_items',
+      'receipts',
+      'receipt_items'
+    ];
+    
+    // Check each table exists
+    for (final tableName in requiredTables) {
+      final tables = await db.rawQuery("SELECT name FROM sqlite_master WHERE type='table' AND name='$tableName';");
+      if (tables.isEmpty) {
+        print('$tableName table missing, creating it now...');
+        // Create the missing table
+        await _createMissingTable(db, tableName);
+      } else {
+        // Ensure all required columns exist
+        await _ensureColumnsExist(db, tableName);
+      }
+    }
+  }
+  
+  // Create a specific missing table
+  Future<void> _createMissingTable(Database db, String tableName) async {
+    switch (tableName) {
+      case 'categories':
+        await db.execute('''
+          CREATE TABLE categories(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            description TEXT
+          )
+        ''');
+        break;
+      case 'suppliers':
+        await db.execute('''
+          CREATE TABLE suppliers(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            company TEXT,
+            description TEXT,
+            phone TEXT
+          )
+        ''');
+        break;
+      case 'products':
+        await db.execute('''
+          CREATE TABLE products(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            barcode TEXT,
+            name TEXT NOT NULL,
+            description TEXT,
+            quantity INTEGER NOT NULL DEFAULT 0,
+            buy_price REAL,
+            sell_price REAL,
+            category_id INTEGER,
+            supplier_id INTEGER,
+            FOREIGN KEY (category_id) REFERENCES categories (id),
+            FOREIGN KEY (supplier_id) REFERENCES suppliers (id)
+          )
+        ''');
+        break;
+      case 'clients':
+        await db.execute('''
+          CREATE TABLE clients(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            description TEXT,
+            phone TEXT,
+            points INTEGER NOT NULL DEFAULT 0
+          )
+        ''');
+        break;
+      case 'carts':
+        await db.execute('''
+          CREATE TABLE carts(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            date DATETIME NOT NULL,
+            client_id INTEGER,
+            total_amount REAL NOT NULL DEFAULT 0,
+            FOREIGN KEY (client_id) REFERENCES clients (id)
+          )
+        ''');
+        break;
+      case 'cart_items':
+        await db.execute('''
+          CREATE TABLE cart_items(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            cart_id INTEGER NOT NULL,
+            product_id INTEGER NOT NULL,
+            quantity INTEGER NOT NULL DEFAULT 1,
+            price_at_sale REAL NOT NULL,
+            FOREIGN KEY (cart_id) REFERENCES carts (id),
+            FOREIGN KEY (product_id) REFERENCES products (id)
+          )
+        ''');
+        break;
+      case 'receipts':
+        await db.execute('''
+          CREATE TABLE receipts(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            date DATETIME NOT NULL,
+            client_id INTEGER,
+            company TEXT,
+            total_amount REAL NOT NULL DEFAULT 0,
+            status TEXT NOT NULL DEFAULT 'pending',
+            FOREIGN KEY (client_id) REFERENCES clients (id)
+          )
+        ''');
+        break;
+      case 'receipt_items':
+        await db.execute('''
+          CREATE TABLE receipt_items(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            receipt_id INTEGER NOT NULL,
+            product_id INTEGER NOT NULL,
+            quantity INTEGER NOT NULL DEFAULT 1,
+            price_at_sale REAL NOT NULL,
+            total REAL NOT NULL,
+            FOREIGN KEY (receipt_id) REFERENCES receipts (id),
+            FOREIGN KEY (product_id) REFERENCES products (id)
+          )
+        ''');
+        break;
+    }
+  }
+  
+  // Ensure all required columns exist in a table
+  Future<void> _ensureColumnsExist(Database db, String tableName) async {
+    // Get current columns
+    final columns = await db.rawQuery("PRAGMA table_info($tableName);");
+    final columnNames = columns.map((c) => c['name'] as String).toList();
+    
+    switch (tableName) {
+      case 'suppliers':
+        if (!columnNames.contains('company')) {
+          await db.execute("ALTER TABLE suppliers ADD COLUMN company TEXT;");
+        }
+        if (!columnNames.contains('description')) {
+          await db.execute("ALTER TABLE suppliers ADD COLUMN description TEXT;");
+        }
+        break;
+      case 'clients':
+        if (!columnNames.contains('description')) {
+          await db.execute("ALTER TABLE clients ADD COLUMN description TEXT;");
+        }
+        if (!columnNames.contains('points')) {
+          await db.execute("ALTER TABLE clients ADD COLUMN points INTEGER NOT NULL DEFAULT 0;");
+        }
+        break;
+      case 'receipts':
+        if (!columnNames.contains('company')) {
+          await db.execute("ALTER TABLE receipts ADD COLUMN company TEXT;");
+        }
+        break;
+    }
+  }
+  
+  // Handle database upgrades
+  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 2) {
+      // Make sure all tables exist
+      await _ensureTablesExist(db);
     }
   }
 
@@ -118,6 +295,8 @@ class DatabaseHelper {
       CREATE TABLE suppliers(
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
+        company TEXT,
+        description TEXT,
         phone TEXT
       )
     ''');
@@ -144,7 +323,9 @@ class DatabaseHelper {
       CREATE TABLE clients(
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
-        phone TEXT
+        description TEXT,
+        phone TEXT,
+        points INTEGER NOT NULL DEFAULT 0
       )
     ''');
 
@@ -418,6 +599,8 @@ class DatabaseHelper {
           supplier = Supplier(
             id: _idCounters['suppliers']!,
             name: supplier.name,
+            company: supplier.company,
+            description: supplier.description,
             phone: supplier.phone,
           );
           _idCounters['suppliers'] = _idCounters['suppliers']! + 1;
@@ -518,7 +701,9 @@ class DatabaseHelper {
           client = Client(
             id: _idCounters['clients']!,
             name: client.name,
+            description: client.description,
             phone: client.phone,
+            points: client.points,
           );
           _idCounters['clients'] = _idCounters['clients']! + 1;
         }

@@ -55,8 +55,13 @@ class DatabaseHelper {
           // Try to initialize SQLite for mobile/desktop platforms
           _database = await openDatabase(
             'inventory.db',
-            version: 1,
+            version: 2, // Increased version for schema updates
             onCreate: _createDb,
+            onUpgrade: _onUpgrade,
+            onOpen: (db) async {
+              // Check if all required tables exist
+              await _ensureTablesExist(db);
+            },
           );
           print('SQLite database initialized successfully');
         } catch (e) {
@@ -76,6 +81,181 @@ class DatabaseHelper {
       
       // Ensure essential categories exist
       await _ensureEssentialCategories();
+    }
+  }
+  
+  // Ensure all required tables exist
+  Future<void> _ensureTablesExist(Database db) async {
+    // List of all table names
+    final requiredTables = [
+      'categories',
+      'suppliers',
+      'products',
+      'clients',
+      'carts',
+      'cart_items',
+      'receipts',
+      'receipt_items'
+    ];
+    
+    // Check each table exists
+    for (final tableName in requiredTables) {
+      final tables = await db.rawQuery("SELECT name FROM sqlite_master WHERE type='table' AND name='$tableName';");
+      if (tables.isEmpty) {
+        print('$tableName table missing, creating it now...');
+        // Create the missing table
+        await _createMissingTable(db, tableName);
+      } else {
+        // Ensure all required columns exist
+        await _ensureColumnsExist(db, tableName);
+      }
+    }
+  }
+  
+  // Create a specific missing table
+  Future<void> _createMissingTable(Database db, String tableName) async {
+    switch (tableName) {
+      case 'categories':
+        await db.execute('''
+          CREATE TABLE IF NOT EXISTS categories(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            description TEXT
+          )
+        ''');
+        break;
+      case 'suppliers':
+        await db.execute('''
+          CREATE TABLE IF NOT EXISTS suppliers(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            company TEXT,
+            description TEXT,
+            phone TEXT
+          )
+        ''');
+        break;
+      case 'products':
+        await db.execute('''
+          CREATE TABLE IF NOT EXISTS products(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            barcode TEXT,
+            name TEXT NOT NULL,
+            description TEXT,
+            quantity INTEGER NOT NULL DEFAULT 0,
+            buy_price REAL,
+            sell_price REAL,
+            category_id INTEGER,
+            supplier_id INTEGER,
+            FOREIGN KEY (category_id) REFERENCES categories (id),
+            FOREIGN KEY (supplier_id) REFERENCES suppliers (id)
+          )
+        ''');
+        break;
+      case 'clients':
+        await db.execute('''
+          CREATE TABLE IF NOT EXISTS clients(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            description TEXT,
+            phone TEXT,
+            points INTEGER NOT NULL DEFAULT 0
+          )
+        ''');
+        break;
+      case 'carts':
+        await db.execute('''
+          CREATE TABLE IF NOT EXISTS carts(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            date DATETIME NOT NULL,
+            client_id INTEGER,
+            total_amount REAL NOT NULL DEFAULT 0,
+            FOREIGN KEY (client_id) REFERENCES clients (id)
+          )
+        ''');
+        break;
+      case 'cart_items':
+        await db.execute('''
+          CREATE TABLE IF NOT EXISTS cart_items(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            cart_id INTEGER NOT NULL,
+            product_id INTEGER NOT NULL,
+            quantity INTEGER NOT NULL DEFAULT 1,
+            price_at_sale REAL NOT NULL,
+            FOREIGN KEY (cart_id) REFERENCES carts (id),
+            FOREIGN KEY (product_id) REFERENCES products (id)
+          )
+        ''');
+        break;
+      case 'receipts':
+        await db.execute('''
+          CREATE TABLE IF NOT EXISTS receipts(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            date DATETIME NOT NULL,
+            client_id INTEGER,
+            company TEXT,
+            total_amount REAL NOT NULL DEFAULT 0,
+            status TEXT NOT NULL DEFAULT 'pending',
+            FOREIGN KEY (client_id) REFERENCES clients (id)
+          )
+        ''');
+        break;
+      case 'receipt_items':
+        await db.execute('''
+          CREATE TABLE IF NOT EXISTS receipt_items(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            receipt_id INTEGER NOT NULL,
+            product_id INTEGER NOT NULL,
+            quantity INTEGER NOT NULL DEFAULT 1,
+            price_at_sale REAL NOT NULL,
+            total REAL NOT NULL,
+            FOREIGN KEY (receipt_id) REFERENCES receipts (id),
+            FOREIGN KEY (product_id) REFERENCES products (id)
+          )
+        ''');
+        break;
+    }
+  }
+  
+  // Ensure all required columns exist in a table
+  Future<void> _ensureColumnsExist(Database db, String tableName) async {
+    // Get current columns
+    final columns = await db.rawQuery("PRAGMA table_info($tableName);");
+    final columnNames = columns.map((c) => c['name'] as String).toList();
+    
+    switch (tableName) {
+      case 'suppliers':
+        if (!columnNames.contains('company')) {
+          await db.execute("ALTER TABLE suppliers ADD COLUMN company TEXT;");
+        }
+        if (!columnNames.contains('description')) {
+          await db.execute("ALTER TABLE suppliers ADD COLUMN description TEXT;");
+        }
+        break;
+      case 'clients':
+        if (!columnNames.contains('description')) {
+          await db.execute("ALTER TABLE clients ADD COLUMN description TEXT;");
+        }
+        if (!columnNames.contains('points')) {
+          await db.execute("ALTER TABLE clients ADD COLUMN points INTEGER NOT NULL DEFAULT 0;");
+        }
+        break;
+      case 'receipts':
+        if (!columnNames.contains('company')) {
+          await db.execute("ALTER TABLE receipts ADD COLUMN company TEXT;");
+        }
+        if (!columnNames.contains('status')) {
+          await db.execute("ALTER TABLE receipts ADD COLUMN status TEXT NOT NULL DEFAULT 'pending';");
+        }
+        break;
+    }
+  }
+  
+  // Handle database upgrades
+  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 2) {
+      // Make sure all tables exist
+      await _ensureTablesExist(db);
     }
   }
 
@@ -127,6 +307,7 @@ class DatabaseHelper {
       CREATE TABLE IF NOT EXISTS suppliers(
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
+        description TEXT,
         company TEXT,
         phone TEXT
       )
@@ -155,7 +336,8 @@ class DatabaseHelper {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
         description TEXT,
-        phone TEXT
+        phone TEXT,
+        points INTEGER NOT NULL DEFAULT 0
       )
     ''');
 
@@ -484,6 +666,8 @@ class DatabaseHelper {
           supplier = Supplier(
             id: _idCounters['suppliers']!,
             name: supplier.name,
+            company: supplier.company,
+            description: supplier.description,
             phone: supplier.phone,
           );
           _idCounters['suppliers'] = _idCounters['suppliers']! + 1;
@@ -584,7 +768,9 @@ class DatabaseHelper {
           client = Client(
             id: _idCounters['clients']!,
             name: client.name,
+            description: client.description,
             phone: client.phone,
+            points: client.points,
           );
           _idCounters['clients'] = _idCounters['clients']! + 1;
         }
@@ -852,6 +1038,346 @@ class DatabaseHelper {
         final initialLength = items.length;
         _memoryDb['cart_items'] = items.where((i) => i.id != id).toList();
         return initialLength - _memoryDb['cart_items']!.length;
+      },
+    );
+  }
+
+  // Dashboard Methods
+
+  /// Get total revenue within a date range
+  Future<double> getTotalRevenueInRange(String startDate, String endDate) async {
+    return _executeDbOperation<double>(
+      dbOperation: (Database db) async {
+        try {
+          // Check if receipts table exists
+          final tables = await db.rawQuery("SELECT name FROM sqlite_master WHERE type='table' AND name='receipts';");
+          if (tables.isEmpty) {
+            return 0.0;
+          }
+          
+          final List<Map<String, dynamic>> result = await db.rawQuery(''' 
+            SELECT SUM(total_amount) as total_revenue
+            FROM receipts
+            WHERE date BETWEEN ? AND ? 
+          ''', [startDate, endDate]);
+          
+          if (result.isNotEmpty && result[0]['total_revenue'] != null) {
+            return (result[0]['total_revenue'] as num).toDouble();
+          }
+          return 0.0;
+        } catch (e) {
+          print('Error getting total revenue: $e');
+          return 0.0;
+        }
+      },
+      memoryOperation: () {
+        try {
+          // Filter carts within the date range
+          final carts = _memoryDb['carts'] as List<Cart>;
+          final matchingCarts = carts.where((cart) {
+            final cartDate = cart.date;
+            final start = DateTime.parse(startDate);
+            final end = DateTime.parse(endDate);
+            return cartDate.isAfter(start) && cartDate.isBefore(end);
+          }).toList();
+          
+          // Sum up total amounts
+          return matchingCarts.fold<double>(0.0, (sum, cart) => sum + cart.totalAmount);
+        } catch (e) {
+          print('Error calculating revenue from memory: $e');
+          return 0.0;
+        }
+      },
+    );
+  }
+
+  /// Get total profit within a date range
+  Future<double> getTotalProfitInRange(String startDate, String endDate) async {
+    return _executeDbOperation<double>(
+      dbOperation: (Database db) async {
+        try {
+          // Check if all required tables exist
+          final tables = await db.rawQuery("SELECT name FROM sqlite_master WHERE type='table' AND name='receipts';");
+          final itemTables = await db.rawQuery("SELECT name FROM sqlite_master WHERE type='table' AND name='cart_items';");
+          final productTables = await db.rawQuery("SELECT name FROM sqlite_master WHERE type='table' AND name='products';");
+          
+          if (tables.isEmpty || itemTables.isEmpty || productTables.isEmpty) {
+            return 0.0;
+          }
+          
+          // Calculate total revenue
+          final List<Map<String, dynamic>> revenueResult = await db.rawQuery(''' 
+            SELECT SUM(total_amount) as total_revenue
+            FROM receipts
+            WHERE date BETWEEN ? AND ? 
+          ''', [startDate, endDate]);
+          
+          final double totalRevenue = revenueResult.isNotEmpty && revenueResult[0]['total_revenue'] != null
+            ? (revenueResult[0]['total_revenue'] as num).toDouble()
+            : 0.0;
+          
+          // Calculate total cost
+          final List<Map<String, dynamic>> costResult = await db.rawQuery(''' 
+            SELECT SUM(ci.quantity * p.buy_price) as total_cost
+            FROM cart_items ci
+            JOIN products p ON ci.product_id = p.id
+            JOIN carts c ON ci.cart_id = c.id
+            WHERE c.date BETWEEN ? AND ? 
+          ''', [startDate, endDate]);
+          
+          final double totalCost = costResult.isNotEmpty && costResult[0]['total_cost'] != null
+            ? (costResult[0]['total_cost'] as num).toDouble()
+            : 0.0;
+          
+          return totalRevenue - totalCost;
+        } catch (e) {
+          print('Error getting total profit: $e');
+          return 0.0;
+        }
+      },
+      memoryOperation: () {
+        try {
+          // Calculate total revenue
+          final carts = _memoryDb['carts'] as List<Cart>;
+          final matchingCarts = carts.where((cart) {
+            final cartDate = cart.date;
+            final start = DateTime.parse(startDate);
+            final end = DateTime.parse(endDate);
+            return cartDate.isAfter(start) && cartDate.isBefore(end);
+          }).toList();
+          
+          double totalRevenue = matchingCarts.fold<double>(0.0, (sum, cart) => sum + cart.totalAmount);
+          
+          // Calculate total cost
+          double totalCost = 0.0;
+          final cartItems = _memoryDb['cart_items'] as List<CartItem>;
+          final products = _memoryDb['products'] as List<Product>;
+          
+          for (final cart in matchingCarts) {
+            final cartId = cart.id!;
+            final itemsInCart = cartItems.where((item) => item.cartId == cartId);
+            
+            for (final item in itemsInCart) {
+              final productId = item.productId;
+              final product = products.firstWhere(
+                (p) => p.id == productId,
+                orElse: () => Product(id: -1, name: '', quantity: 0)
+              );
+              
+              if (product.id != -1) {
+                totalCost += item.quantity * (product.buyPrice ?? 0);
+              }
+            }
+          }
+          
+          return totalRevenue - totalCost;
+        } catch (e) {
+          print('Error calculating profit from memory: $e');
+          return 0.0;
+        }
+      },
+    );
+  }
+
+  /// Get top selling products
+  Future<Map<String, dynamic>> getTopSellingProducts(int limit) async {
+    return _executeDbOperation<Map<String, dynamic>>(
+      dbOperation: (Database db) async {
+        try {
+          // Check if all required tables exist
+          final tables = await db.rawQuery("SELECT name FROM sqlite_master WHERE type='table' AND name='cart_items';");
+          final productTables = await db.rawQuery("SELECT name FROM sqlite_master WHERE type='table' AND name='products';");
+          
+          if (tables.isEmpty || productTables.isEmpty) {
+            return {'products': <Map<String, dynamic>>[], 'total_sold': 0};
+          }
+          
+          // Get top selling products
+          final List<Map<String, dynamic>> results = await db.rawQuery(''' 
+            SELECT p.id, p.name, p.barcode, p.sell_price, 
+                   SUM(ci.quantity) as quantity_sold,
+                   SUM(ci.quantity * ci.price_at_sale) as total_sales
+            FROM cart_items ci
+            JOIN products p ON ci.product_id = p.id
+            GROUP BY p.id
+            ORDER BY quantity_sold DESC
+            LIMIT ? 
+          ''', [limit]);
+          
+          // Get total number of products sold
+          final List<Map<String, dynamic>> totalResult = await db.rawQuery(''' 
+            SELECT SUM(quantity) as total_sold
+            FROM cart_items 
+          ''');
+          
+          final int totalSold = totalResult.isNotEmpty && totalResult[0]['total_sold'] != null
+            ? (totalResult[0]['total_sold'] as num).toInt()
+            : 0;
+          
+          return {'products': results, 'total_sold': totalSold};
+        } catch (e) {
+          print('Error getting top selling products: $e');
+          return {'products': <Map<String, dynamic>>[], 'total_sold': 0};
+        }
+      },
+      memoryOperation: () {
+        try {
+          final cartItems = _memoryDb['cart_items'] as List<CartItem>;
+          final products = _memoryDb['products'] as List<Product>;
+          
+          // Calculate quantity sold for each product
+          final Map<int, int> quantitySold = {};
+          final Map<int, double> totalSales = {};
+          
+          for (final item in cartItems) {
+            final productId = item.productId;
+            final quantity = item.quantity;
+            final sale = quantity * item.priceAtSale;
+            
+            quantitySold[productId] = (quantitySold[productId] ?? 0) + quantity;
+            totalSales[productId] = (totalSales[productId] ?? 0) + sale;
+          }
+          
+          // Create result with product details
+          final List<Map<String, dynamic>> results = [];
+          
+          for (final entry in quantitySold.entries) {
+            final productId = entry.key;
+            final quantity = entry.value;
+            
+            final product = products.firstWhere(
+              (p) => p.id == productId,
+              orElse: () => Product(id: -1, name: 'Unknown', quantity: 0)
+            );
+            
+            if (product.id != -1) {
+              results.add({
+                'id': product.id,
+                'name': product.name,
+                'barcode': product.barcode,
+                'sell_price': product.sellPrice,
+                'quantity_sold': quantity,
+                'total_sales': totalSales[productId] ?? 0,
+              });
+            }
+          }
+          
+          // Sort by quantity sold and limit
+          results.sort((a, b) => (b['quantity_sold'] as int).compareTo(a['quantity_sold'] as int));
+          final limitedResults = results.take(limit).toList();
+          
+          // Calculate total sold
+          final totalSold = cartItems.fold<int>(0, (sum, item) => sum + item.quantity);
+          
+          return {'products': limitedResults, 'total_sold': totalSold};
+        } catch (e) {
+          print('Error calculating top products from memory: $e');
+          return {'products': <Map<String, dynamic>>[], 'total_sold': 0};
+        }
+      },
+    );
+  }
+
+  /// Get top clients by purchase amount
+  Future<Map<String, dynamic>> getTopClients(int limit) async {
+    return _executeDbOperation<Map<String, dynamic>>(
+      dbOperation: (Database db) async {
+        try {
+          // Check if all required tables exist
+          final cartTables = await db.rawQuery("SELECT name FROM sqlite_master WHERE type='table' AND name='carts';");
+          final clientTables = await db.rawQuery("SELECT name FROM sqlite_master WHERE type='table' AND name='clients';");
+          
+          if (cartTables.isEmpty || clientTables.isEmpty) {
+            return {'clients': <Map<String, dynamic>>[], 'total_sales': 0};
+          }
+          
+          // Get top clients
+          final List<Map<String, dynamic>> results = await db.rawQuery(''' 
+            SELECT c.id, c.name, c.phone, c.points,
+                   COUNT(ct.id) as order_count,
+                   SUM(ct.total_amount) as total_spent
+            FROM clients c
+            JOIN carts ct ON c.id = ct.client_id
+            GROUP BY c.id
+            ORDER BY total_spent DESC
+            LIMIT ? 
+          ''', [limit]);
+          
+          // Get total sales across all clients
+          final List<Map<String, dynamic>> totalResult = await db.rawQuery(''' 
+            SELECT SUM(total_amount) as total_sales
+            FROM carts
+            WHERE client_id IS NOT NULL 
+          ''');
+          
+          final double totalSales = totalResult.isNotEmpty && totalResult[0]['total_sales'] != null
+            ? (totalResult[0]['total_sales'] as num).toDouble()
+            : 0.0;
+          
+          return {'clients': results, 'total_sales': totalSales};
+        } catch (e) {
+          print('Error getting top clients: $e');
+          return {'clients': <Map<String, dynamic>>[], 'total_sales': 0};
+        }
+      },
+      memoryOperation: () {
+        try {
+          final carts = _memoryDb['carts'] as List<Cart>;
+          final clients = _memoryDb['clients'] as List<Client>;
+          
+          // Group carts by client ID
+          final Map<int?, List<Cart>> cartsByClient = {};
+          
+          for (final cart in carts) {
+            if (cart.clientId != null) {
+              if (!cartsByClient.containsKey(cart.clientId)) {
+                cartsByClient[cart.clientId] = [];
+              }
+              cartsByClient[cart.clientId]!.add(cart);
+            }
+          }
+          
+          // Calculate metrics for each client
+          final List<Map<String, dynamic>> results = [];
+          
+          for (final entry in cartsByClient.entries) {
+            final clientId = entry.key;
+            final clientCarts = entry.value;
+            
+            final client = clients.firstWhere(
+              (c) => c.id == clientId,
+              orElse: () => Client(id: -1, name: 'Unknown')
+            );
+            
+            if (client.id != -1) {
+              final orderCount = clientCarts.length;
+              final totalSpent = clientCarts.fold<double>(0, (sum, cart) => sum + cart.totalAmount);
+              
+              results.add({
+                'id': client.id,
+                'name': client.name,
+                'phone': client.phone,
+                'points': client.points,
+                'order_count': orderCount,
+                'total_spent': totalSpent,
+              });
+            }
+          }
+          
+          // Sort by total spent and limit
+          results.sort((a, b) => (b['total_spent'] as double).compareTo(a['total_spent'] as double));
+          final limitedResults = results.take(limit).toList();
+          
+          // Calculate total sales
+          final totalSales = carts
+            .where((cart) => cart.clientId != null)
+            .fold<double>(0, (sum, cart) => sum + cart.totalAmount);
+          
+          return {'clients': limitedResults, 'total_sales': totalSales};
+        } catch (e) {
+          print('Error calculating top clients from memory: $e');
+          return {'clients': <Map<String, dynamic>>[], 'total_sales': 0};
+        }
       },
     );
   }

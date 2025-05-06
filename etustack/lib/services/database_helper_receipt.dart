@@ -50,14 +50,8 @@ class DatabaseHelperReceipt {
             onCreate: _createDb,
             onUpgrade: _onUpgrade,
             onOpen: (db) async {
-              // Critical: Always check if receipts table exists when opening the database
-              // This handles cases where the table might not have been created properly
-              final tables = await db.rawQuery("SELECT name FROM sqlite_master WHERE type='table' AND name='receipts';");
-              if (tables.isEmpty) {
-                print('Receipts table missing, creating it now...');
-                // Force create the receipts table if it doesn't exist
-                await _createDb(db, 2);
-              }
+              // Check for required tables and columns during every database open
+              await _ensureTablesExist(db);
             },
           );
           print('SQLite database initialized successfully');
@@ -69,6 +63,67 @@ class DatabaseHelperReceipt {
       }
       
       _isInitialized = true;
+    }
+  }
+  
+  // Ensure tables exist method
+  Future<void> _ensureTablesExist(Database db) async {
+    final requiredTables = ['receipts', 'receipt_items'];
+    
+    // Check each table exists
+    for (final tableName in requiredTables) {
+      final tables = await db.rawQuery("SELECT name FROM sqlite_master WHERE type='table' AND name='$tableName';");
+      if (tables.isEmpty) {
+        print('$tableName table missing, creating it now...');
+        // Create the missing table
+        await _createMissingTable(db, tableName);
+      } else {
+        // Check for and add any missing columns
+        await _ensureColumnsExist(db, tableName);
+      }
+    }
+  }
+  
+  // Create a specific missing table
+  Future<void> _createMissingTable(Database db, String tableName) async {
+    switch (tableName) {
+      case 'receipts':
+        await db.execute('''
+          CREATE TABLE receipts(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            date DATETIME NOT NULL,
+            client_id INTEGER,
+            company TEXT,
+            total_amount REAL NOT NULL DEFAULT 0,
+            status TEXT NOT NULL DEFAULT 'pending',
+            FOREIGN KEY (client_id) REFERENCES clients (id)
+          )
+        ''');
+        break;
+      case 'receipt_items':
+        await db.execute('''
+          CREATE TABLE receipt_items(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            receipt_id INTEGER NOT NULL,
+            product_id INTEGER NOT NULL,
+            quantity INTEGER NOT NULL DEFAULT 1,
+            price_at_sale REAL NOT NULL,
+            total REAL NOT NULL,
+            FOREIGN KEY (receipt_id) REFERENCES receipts (id),
+            FOREIGN KEY (product_id) REFERENCES products (id)
+          )
+        ''');
+        break;
+    }
+  }
+  
+  // Ensure all required columns exist in a table
+  Future<void> _ensureColumnsExist(Database db, String tableName) async {
+    final columns = await db.rawQuery("PRAGMA table_info($tableName);");
+    final columnNames = columns.map((c) => c['name'] as String).toList();
+    
+    if (tableName == 'receipts' && !columnNames.contains('company')) {
+      await db.execute("ALTER TABLE receipts ADD COLUMN company TEXT;");
     }
   }
 
@@ -103,44 +158,9 @@ class DatabaseHelperReceipt {
 
   // Create database tables
   Future<void> _createDb(Database db, int version) async {
-    // Check if receipts table exists
-    final tables = await db.rawQuery("SELECT name FROM sqlite_master WHERE type='table' AND name='receipts';");
-    
-    if (tables.isEmpty) {
-      // Create Receipt table if it doesn't exist
-      await db.execute('''
-        CREATE TABLE IF NOT EXISTS receipts(
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          date DATETIME NOT NULL,
-          client_id INTEGER,
-          company TEXT,
-          total_amount REAL NOT NULL DEFAULT 0,
-          status TEXT NOT NULL DEFAULT 'pending',
-          FOREIGN KEY (client_id) REFERENCES clients (id)
-        )
-      ''');
-      print('Receipts table created successfully');
-    }
-    
-    // Check if receipt_items table exists
-    final itemTables = await db.rawQuery("SELECT name FROM sqlite_master WHERE type='table' AND name='receipt_items';");
-    
-    if (itemTables.isEmpty) {
-      // Create ReceiptItem table if it doesn't exist
-      await db.execute('''
-        CREATE TABLE IF NOT EXISTS receipt_items(
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          receipt_id INTEGER NOT NULL,
-          product_id INTEGER NOT NULL,
-          quantity INTEGER NOT NULL DEFAULT 1,
-          price_at_sale REAL NOT NULL,
-          total REAL NOT NULL,
-          FOREIGN KEY (receipt_id) REFERENCES receipts (id),
-          FOREIGN KEY (product_id) REFERENCES products (id)
-        )
-      ''');
-      print('Receipt_items table created successfully');
-    }
+    // This method is now simplified since we have more robust table checking in _ensureTablesExist
+    await _createMissingTable(db, 'receipts');
+    await _createMissingTable(db, 'receipt_items');
   }
   
   // Handle database upgrades
@@ -209,6 +229,7 @@ class DatabaseHelperReceipt {
             id: _idCounters['receipts']!,
             date: receipt.date,
             clientId: receipt.clientId,
+            company: receipt.company,
             totalAmount: receipt.totalAmount,
             status: receipt.status,
           );
