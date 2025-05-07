@@ -370,7 +370,7 @@ class _ReceiptFormScreenState extends State<ReceiptFormScreen> {
           receiptId: 0, // Will be updated when saving
           productId: product.id!,
           quantity: quantity,
-          price: priceAtSale,
+          priceAtSale: priceAtSale,
         ));
       });
       
@@ -393,7 +393,7 @@ class _ReceiptFormScreenState extends State<ReceiptFormScreen> {
           date: DateTime.now(),
           clientId: _selectedClient?.id,
           type: 'sale', // Added required type field
-          totalAmount: _totalAmount,
+          total: _totalAmount,
           status: 'pending',
         );
         
@@ -406,7 +406,7 @@ class _ReceiptFormScreenState extends State<ReceiptFormScreen> {
             receiptId: receiptId,
             productId: item.productId,
             quantity: item.quantity,
-            price: item.price,
+            priceAtSale: item.priceAtSale,
           );
           await _dbHelper.insertReceiptItem(receiptItem);
           
@@ -505,7 +505,7 @@ class _ReceiptFormScreenState extends State<ReceiptFormScreen> {
                               
                               return ListTile(
                                 title: Text(product.name),
-                                subtitle: Text('${item.quantity} x \$${item.price.toStringAsFixed(2)}'),
+                                subtitle: Text('${item.quantity} x \$${item.priceAtSale.toStringAsFixed(2)}'),
                                 trailing: Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
@@ -1001,7 +1001,7 @@ class _ReceiptDetailScreenState extends State<ReceiptDetailScreen> {
                       ),
                     ),
                     Text(
-                      '\$${receipt.totalAmount.toStringAsFixed(2)}',
+                      '\$${receipt.total.toStringAsFixed(2)}',
                       style: const TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.bold,

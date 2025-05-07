@@ -4,7 +4,7 @@ class Receipt {
   int? clientId;
   int? supplierId;
   String type; // 'sale', 'purchase', 'return', etc.
-  double totalAmount;
+  double total;
   String? paymentMethod;
   String? referenceNumber;
   String? notes;
@@ -15,12 +15,12 @@ class Receipt {
     required this.date,
     this.clientId,
     this.supplierId,
-    required this.type,
-    this.totalAmount = 0.0,
+    this.type = 'sale',
+    this.total = 0.0,
     this.paymentMethod,
     this.referenceNumber,
     this.notes,
-    this.status = 'pending',
+    this.status = 'completed',
   });
 
   Map<String, dynamic> toMap() {
@@ -30,7 +30,7 @@ class Receipt {
       'client_id': clientId,
       'supplier_id': supplierId,
       'type': type,
-      'total_amount': totalAmount,
+      'total': total,
       'payment_method': paymentMethod,
       'reference_number': referenceNumber,
       'notes': notes,
@@ -45,7 +45,7 @@ class Receipt {
       clientId: map['client_id'],
       supplierId: map['supplier_id'],
       type: map['type'] ?? 'sale',
-      totalAmount: map['total_amount'] != null ? (map['total_amount'] as num).toDouble() : 0.0,
+      total: map['total'] != null ? (map['total'] as num).toDouble() : 0.0,
       paymentMethod: map['payment_method'],
       referenceNumber: map['reference_number'],
       notes: map['notes'],

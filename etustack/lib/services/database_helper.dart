@@ -1118,7 +1118,7 @@ class DatabaseHelper {
             id: _idCounters['receipts']!,
             date: receipt.date,
             clientId: receipt.clientId,
-            totalAmount: receipt.totalAmount,
+            total: receipt.total,
             status: receipt.status,
           );
           _idCounters['receipts'] = _idCounters['receipts']! + 1;
@@ -1250,7 +1250,6 @@ class DatabaseHelper {
             productId: item.productId,
             quantity: item.quantity,
             priceAtSale: item.priceAtSale,
-            total: item.total,
           );
           _idCounters['receipt_items'] = _idCounters['receipt_items']! + 1;
         }
@@ -2175,7 +2174,7 @@ class DatabaseHelper {
           // Calculate total revenue for the month
           final revenue = monthReceipts.fold(
             0.0,
-            (sum, r) => sum + r.totalAmount,
+            (sum, r) => sum + r.total,
           );
 
           // Calculate cost for profit calculation
