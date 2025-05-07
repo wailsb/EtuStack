@@ -5,9 +5,9 @@ import '../models/receipt.dart';
 import '../models/receipt_item.dart';
 import '../models/client.dart';
 import '../models/product.dart';
-import '../services/database_helper_receipt.dart';
 import '../services/database_helper.dart';
 import '../utils/app_constants.dart';
+import 'package:flutter_slidable/flutter_slidable.dart';
 
 class ReceiptManagementScreen extends StatefulWidget {
   const ReceiptManagementScreen({Key? key}) : super(key: key);
@@ -17,8 +17,7 @@ class ReceiptManagementScreen extends StatefulWidget {
 }
 
 class _ReceiptManagementScreenState extends State<ReceiptManagementScreen> {
-  final DatabaseHelperReceipt _dbHelper = DatabaseHelperReceipt();
-  // Removed unused DatabaseHelper field
+  final DatabaseHelper _dbHelper = DatabaseHelper();
   List<Map<String, dynamic>> _receipts = [];
   bool _isLoading = true;
   String _searchQuery = '';
@@ -109,50 +108,72 @@ class _ReceiptManagementScreenState extends State<ReceiptManagementScreen> {
                                 : 0.0;
                             final clientName = receipt['client_name'] ?? 'Walk-in Customer';
 
-                            return Card(
-                              margin: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 8,
+                            return Slidable(
+                              endActionPane: ActionPane(
+                                motion: const ScrollMotion(),
+                                children: [
+                                  SlidableAction(
+                                    onPressed: (context) {
+                                      _viewReceiptDetails(receipt['id']);
+                                    },
+                                    backgroundColor: Colors.blue,
+                                    foregroundColor: Colors.white,
+                                    icon: Icons.visibility,
+                                    label: 'View',
+                                  ),
+                                  SlidableAction(
+                                    onPressed: (context) {
+                                      _deleteReceipt(receipt['id']);
+                                    },
+                                    backgroundColor: Colors.red,
+                                    foregroundColor: Colors.white,
+                                    icon: Icons.delete,
+                                    label: 'Delete',
+                                  ),
+                                ],
                               ),
-                              child: ListTile(
-                                leading: CircleAvatar(
-                                  backgroundColor: _getStatusColor(status),
-                                  child: Icon(
-                                    _getStatusIcon(status),
-                                    color: Colors.white,
+                              child: Card(
+                                margin: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 8,
+                                ),
+                                child: ListTile(
+                                  leading: CircleAvatar(
+                                    backgroundColor: _getStatusColor(status),
+                                    child: Icon(
+                                      _getStatusIcon(status),
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                  title: Text('Receipt #${receipt['id']}'),
+                                  subtitle: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text('Date: ${DateFormat('MMM d, y').format(date)}'),
+                                      Text('Client: $clientName'),
+                                    ],
+                                  ),
+                                  trailing: Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    crossAxisAlignment: CrossAxisAlignment.end,
+                                    children: [
+                                      Text(
+                                        '\$${totalAmount.toStringAsFixed(2)}',
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 16,
+                                        ),
+                                      ),
+                                      Text(
+                                        status.toUpperCase(),
+                                        style: TextStyle(
+                                          color: _getStatusColor(status),
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
-                                title: Text('Receipt #${receipt['id']}'),
-                                subtitle: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text('Date: ${DateFormat('MMM d, y').format(date)}'),
-                                    Text('Client: $clientName'),
-                                  ],
-                                ),
-                                trailing: Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  crossAxisAlignment: CrossAxisAlignment.end,
-                                  children: [
-                                    Text(
-                                      '\$${totalAmount.toStringAsFixed(2)}',
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 16,
-                                      ),
-                                    ),
-                                    Text(
-                                      status.toUpperCase(),
-                                      style: TextStyle(
-                                        color: _getStatusColor(status),
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                onTap: () {
-                                  _viewReceiptDetails(receipt['id']);
-                                },
                               ),
                             );
                           },
@@ -202,13 +223,54 @@ class _ReceiptManagementScreenState extends State<ReceiptManagementScreen> {
     ).then((_) => _loadReceipts());
   }
 
-  Future<void> _viewReceiptDetails(int receiptId) async {
+  void _viewReceiptDetails(int receiptId) {
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => ReceiptDetailScreen(receiptId: receiptId),
       ),
-    ).then((_) => _loadReceipts());
+    );
+  }
+
+  void _deleteReceipt(int receiptId) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Receipt'),
+        content: Text('Are you sure you want to delete receipt #$receiptId?'),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+            },
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.of(context).pop();
+              try {
+                await _dbHelper.deleteReceipt(receiptId);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Receipt deleted successfully'),
+                    backgroundColor: AppConstants.successColor,
+                  ),
+                );
+                _loadReceipts(); // Refresh the list
+              } catch (e) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Error deleting receipt: $e'),
+                    backgroundColor: AppConstants.errorColor,
+                  ),
+                );
+              }
+            },
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -223,9 +285,7 @@ class ReceiptFormScreen extends StatefulWidget {
 }
 
 class _ReceiptFormScreenState extends State<ReceiptFormScreen> {
-  final DatabaseHelperReceipt _dbHelper = DatabaseHelperReceipt();
-  final DatabaseHelper _mainDbHelper = DatabaseHelper();
-  
+  final DatabaseHelper _dbHelper = DatabaseHelper();
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
   
   List<Client> _clients = [];
@@ -249,8 +309,8 @@ class _ReceiptFormScreenState extends State<ReceiptFormScreen> {
 
     try {
       // Load clients and products
-      final clients = await _mainDbHelper.getClients();
-      final products = await _mainDbHelper.getProducts();
+      final clients = await _dbHelper.getClients();
+      final products = await _dbHelper.getProducts();
       
       setState(() {
         _clients = clients;
@@ -354,7 +414,7 @@ class _ReceiptFormScreenState extends State<ReceiptFormScreen> {
           // Update product inventory
           final product = _products.firstWhere((p) => p.id == item.productId);
           product.quantity -= item.quantity;
-          await _mainDbHelper.updateProduct(product);
+          await _dbHelper.updateProduct(product);
         }
         
         Navigator.pop(context);
@@ -755,7 +815,7 @@ class ReceiptDetailScreen extends StatefulWidget {
 }
 
 class _ReceiptDetailScreenState extends State<ReceiptDetailScreen> {
-  final DatabaseHelperReceipt _dbHelper = DatabaseHelperReceipt();
+  final DatabaseHelper _dbHelper = DatabaseHelper();
   bool _isLoading = true;
   Map<String, dynamic>? _receiptData;
   

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:sqflite/sqflite.dart';
+import 'package:intl/intl.dart'; // Added for DateFormat
 
 import '../models/category.dart';
 import '../models/supplier.dart';
@@ -8,6 +9,8 @@ import '../models/product.dart';
 import '../models/client.dart';
 import '../models/cart.dart';
 import '../models/cart_item.dart';
+import '../models/receipt.dart';
+import '../models/receipt_item.dart';
 
 /// A cross-platform database helper that works on web, mobile, and desktop
 class DatabaseHelper {
@@ -26,6 +29,8 @@ class DatabaseHelper {
     'clients': <Client>[],
     'carts': <Cart>[],
     'cart_items': <CartItem>[],
+    'receipts': <Receipt>[],
+    'receipt_items': <ReceiptItem>[],
   };
 
   // Counter for auto-increment IDs
@@ -36,8 +41,10 @@ class DatabaseHelper {
     'clients': 1,
     'carts': 1,
     'cart_items': 1,
+    'receipts': 1,
+    'receipt_items': 1,
   };
-  
+
   // Add sample data flag
   bool _sampleDataAdded = false;
 
@@ -70,20 +77,20 @@ class DatabaseHelper {
           print('Falling back to in-memory storage');
         }
       }
-      
+
       _isInitialized = true;
-      
+
       // Add sample data for demo purposes
       if (!_sampleDataAdded) {
         await _addSampleData();
         _sampleDataAdded = true;
       }
-      
+
       // Ensure essential categories exist
       await _ensureEssentialCategories();
     }
   }
-  
+
   // Ensure all required tables exist
   Future<void> _ensureTablesExist(Database db) async {
     // List of all table names
@@ -95,12 +102,14 @@ class DatabaseHelper {
       'carts',
       'cart_items',
       'receipts',
-      'receipt_items'
+      'receipt_items',
     ];
-    
+
     // Check each table exists
     for (final tableName in requiredTables) {
-      final tables = await db.rawQuery("SELECT name FROM sqlite_master WHERE type='table' AND name='$tableName';");
+      final tables = await db.rawQuery(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='$tableName';",
+      );
       if (tables.isEmpty) {
         print('$tableName table missing, creating it now...');
         // Create the missing table
@@ -111,7 +120,7 @@ class DatabaseHelper {
       }
     }
   }
-  
+
   // Create a specific missing table
   Future<void> _createMissingTable(Database db, String tableName) async {
     switch (tableName) {
@@ -191,12 +200,17 @@ class DatabaseHelper {
         await db.execute('''
           CREATE TABLE IF NOT EXISTS receipts(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            date DATETIME NOT NULL,
+            date TEXT NOT NULL,
             client_id INTEGER,
-            company TEXT,
+            supplier_id INTEGER,
+            type TEXT,
             total_amount REAL NOT NULL DEFAULT 0,
-            status TEXT NOT NULL DEFAULT 'pending',
-            FOREIGN KEY (client_id) REFERENCES clients (id)
+            payment_method TEXT,
+            reference_number TEXT,
+            notes TEXT,
+            status TEXT DEFAULT 'pending',
+            FOREIGN KEY (client_id) REFERENCES clients (id),
+            FOREIGN KEY (supplier_id) REFERENCES suppliers (id)
           )
         ''');
         break;
@@ -207,7 +221,7 @@ class DatabaseHelper {
             receipt_id INTEGER NOT NULL,
             product_id INTEGER NOT NULL,
             quantity INTEGER NOT NULL DEFAULT 1,
-            price_at_sale REAL NOT NULL,
+            price REAL NOT NULL,
             total REAL NOT NULL,
             FOREIGN KEY (receipt_id) REFERENCES receipts (id),
             FOREIGN KEY (product_id) REFERENCES products (id)
@@ -216,20 +230,22 @@ class DatabaseHelper {
         break;
     }
   }
-  
+
   // Ensure all required columns exist in a table
   Future<void> _ensureColumnsExist(Database db, String tableName) async {
     // Get current columns
     final columns = await db.rawQuery("PRAGMA table_info($tableName);");
     final columnNames = columns.map((c) => c['name'] as String).toList();
-    
+
     switch (tableName) {
       case 'suppliers':
         if (!columnNames.contains('company')) {
           await db.execute("ALTER TABLE suppliers ADD COLUMN company TEXT;");
         }
         if (!columnNames.contains('description')) {
-          await db.execute("ALTER TABLE suppliers ADD COLUMN description TEXT;");
+          await db.execute(
+            "ALTER TABLE suppliers ADD COLUMN description TEXT;",
+          );
         }
         break;
       case 'clients':
@@ -237,20 +253,42 @@ class DatabaseHelper {
           await db.execute("ALTER TABLE clients ADD COLUMN description TEXT;");
         }
         if (!columnNames.contains('points')) {
-          await db.execute("ALTER TABLE clients ADD COLUMN points INTEGER NOT NULL DEFAULT 0;");
+          await db.execute(
+            "ALTER TABLE clients ADD COLUMN points INTEGER NOT NULL DEFAULT 0;",
+          );
         }
         break;
       case 'receipts':
-        if (!columnNames.contains('company')) {
-          await db.execute("ALTER TABLE receipts ADD COLUMN company TEXT;");
+        if (!columnNames.contains('supplier_id')) {
+          await db.execute(
+            "ALTER TABLE receipts ADD COLUMN supplier_id INTEGER;",
+          );
         }
-        if (!columnNames.contains('status')) {
-          await db.execute("ALTER TABLE receipts ADD COLUMN status TEXT NOT NULL DEFAULT 'pending';");
+        if (!columnNames.contains('type')) {
+          await db.execute("ALTER TABLE receipts ADD COLUMN type TEXT;");
+        }
+        if (!columnNames.contains('payment_method')) {
+          await db.execute(
+            "ALTER TABLE receipts ADD COLUMN payment_method TEXT;",
+          );
+        }
+        if (!columnNames.contains('reference_number')) {
+          await db.execute(
+            "ALTER TABLE receipts ADD COLUMN reference_number TEXT;",
+          );
+        }
+        if (!columnNames.contains('notes')) {
+          await db.execute("ALTER TABLE receipts ADD COLUMN notes TEXT;");
+        }
+        break;
+      case 'receipt_items':
+        if (!columnNames.contains('total')) {
+          await db.execute("ALTER TABLE receipt_items ADD COLUMN total REAL;");
         }
         break;
     }
   }
-  
+
   // Handle database upgrades
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
     if (oldVersion < 2) {
@@ -264,14 +302,14 @@ class DatabaseHelper {
     await initialize();
     return _database;
   }
-  
+
   // Generic method to handle database operations with fallback to in-memory storage
   Future<T> _executeDbOperation<T>({
-    required Future<T> Function(Database) dbOperation, 
-    required T Function() memoryOperation
+    required Future<T> Function(Database) dbOperation,
+    required T Function() memoryOperation,
   }) async {
     await initialize();
-    
+
     if (_usingMemory) {
       return memoryOperation();
     } else {
@@ -288,11 +326,16 @@ class DatabaseHelper {
   // No default categories - users will add their own categories
   Future<void> _ensureEssentialCategories() async {
     // Method left empty to allow users to add their own categories
-    print('No default categories added - users will manage their own categories');
+    print(
+      'No default categories added - users will manage their own categories',
+    );
   }
 
   // Create database tables
   Future<void> _createDb(Database db, int version) async {
+    // Create all necessary tables with proper foreign key relationships
+    // First create tables that don't depend on other tables
+
     // Create Category table
     await db.execute('''
       CREATE TABLE IF NOT EXISTS categories(
@@ -302,14 +345,25 @@ class DatabaseHelper {
       )
     ''');
 
-    // Create Supplier table
+    // Create Supplier table - essential with minimal schema
     await db.execute('''
       CREATE TABLE IF NOT EXISTS suppliers(
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
-        description TEXT,
         company TEXT,
+        description TEXT,
         phone TEXT
+      )
+    ''');
+
+    // Create Client table - essential with minimal schema
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS clients(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        description TEXT,
+        phone TEXT,
+        points INTEGER NOT NULL DEFAULT 0
       )
     ''');
 
@@ -330,18 +384,7 @@ class DatabaseHelper {
       )
     ''');
 
-    // Create Client table
-    await db.execute('''
-      CREATE TABLE IF NOT EXISTS clients(
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL,
-        description TEXT,
-        phone TEXT,
-        points INTEGER NOT NULL DEFAULT 0
-      )
-    ''');
-
-    // Create Cart table
+    // Create Carts table
     await db.execute('''
       CREATE TABLE IF NOT EXISTS carts(
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -352,7 +395,7 @@ class DatabaseHelper {
       )
     ''');
 
-    // Create CartItem table
+    // Create Cart Items table
     await db.execute('''
       CREATE TABLE IF NOT EXISTS cart_items(
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -364,6 +407,40 @@ class DatabaseHelper {
         FOREIGN KEY (product_id) REFERENCES products (id)
       )
     ''');
+
+    // Create Receipts table - essential with minimal schema
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS receipts(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        date TEXT NOT NULL,
+        client_id INTEGER,
+        company TEXT,
+        type TEXT,
+        total_amount REAL NOT NULL DEFAULT 0,
+        payment_method TEXT,
+        reference_number TEXT,
+        notes TEXT,
+        status TEXT DEFAULT 'pending',
+        FOREIGN KEY (client_id) REFERENCES clients (id),
+        FOREIGN KEY (supplier_id) REFERENCES suppliers (id)
+      )
+    ''');
+
+    // Create Receipt Items table
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS receipt_items(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        receipt_id INTEGER NOT NULL,
+        product_id INTEGER NOT NULL,
+        quantity INTEGER NOT NULL DEFAULT 1,
+        price REAL NOT NULL,
+        total REAL NOT NULL,
+        FOREIGN KEY (receipt_id) REFERENCES receipts (id),
+        FOREIGN KEY (product_id) REFERENCES products (id)
+      )
+    ''');
+
+    print('All tables created successfully');
   }
 
   // Category CRUD Operations
@@ -453,16 +530,13 @@ class DatabaseHelper {
   Future<int> deleteCategory(int id) async {
     return _executeDbOperation<int>(
       dbOperation: (Database db) async {
-        return await db.delete(
-          'categories',
-          where: 'id = ?',
-          whereArgs: [id],
-        );
+        return await db.delete('categories', where: 'id = ?', whereArgs: [id]);
       },
       memoryOperation: () {
         final categories = _memoryDb['categories'] as List<Category>;
         final initialLength = categories.length;
-        _memoryDb['categories'] = categories.where((cat) => cat.id != id).toList();
+        _memoryDb['categories'] =
+            categories.where((cat) => cat.id != id).toList();
         return initialLength - _memoryDb['categories']!.length;
       },
     );
@@ -478,7 +552,7 @@ class DatabaseHelper {
         return -1;
       }
     }
-    
+
     return _executeDbOperation<int>(
       dbOperation: (Database db) async {
         return await db.insert('products', product.toMap());
@@ -486,19 +560,21 @@ class DatabaseHelper {
       memoryOperation: () {
         // Add to in-memory storage
         final products = _memoryDb['products'] as List<Product>;
-        
+
         // Check for duplicate barcode in memory too
         if (product.barcode != null && product.barcode!.isNotEmpty) {
-          bool duplicateBarcode = products.any((p) => 
-              p.barcode != null && 
-              p.barcode!.isNotEmpty && 
-              p.barcode == product.barcode);
-              
+          bool duplicateBarcode = products.any(
+            (p) =>
+                p.barcode != null &&
+                p.barcode!.isNotEmpty &&
+                p.barcode == product.barcode,
+          );
+
           if (duplicateBarcode) {
             return -1; // Error: duplicate barcode
           }
         }
-        
+
         if (product.id == null) {
           // Auto-increment ID
           product = Product(
@@ -560,7 +636,7 @@ class DatabaseHelper {
 
   Future<Product?> getProductByBarcode(String barcode) async {
     if (barcode.isEmpty) return null;
-  
+
     return _executeDbOperation<Product?>(
       dbOperation: (Database db) async {
         final List<Map<String, dynamic>> maps = await db.query(
@@ -605,45 +681,44 @@ class DatabaseHelper {
       },
     );
   }
-  
+
   /// Updates the quantity of a product by its ID
   /// Returns the number of rows affected
   Future<int> updateProductQuantity(int productId, int quantityChange) async {
     // First get the current product
     final product = await getProductById(productId);
     if (product == null) return 0;
-    
+
     // Update the quantity
     product.quantity += quantityChange;
-    
+
     // Save the updated product
     return updateProduct(product);
   }
-  
+
   /// Handles a product with a scanned barcode
   /// If the product exists, it returns the existing product
   /// If quantityChange is provided, it updates the product quantity
-  Future<Product?> handleScannedBarcode(String barcode, {int quantityChange = 0}) async {
+  Future<Product?> handleScannedBarcode(
+    String barcode, {
+    int quantityChange = 0,
+  }) async {
     if (barcode.isEmpty) return null;
-    
+
     final product = await getProductByBarcode(barcode);
-    
+
     if (product != null && quantityChange != 0) {
       product.quantity += quantityChange;
       await updateProduct(product);
     }
-    
+
     return product;
   }
 
   Future<int> deleteProduct(int id) async {
     return _executeDbOperation<int>(
       dbOperation: (Database db) async {
-        return await db.delete(
-          'products',
-          where: 'id = ?',
-          whereArgs: [id],
-        );
+        return await db.delete('products', where: 'id = ?', whereArgs: [id]);
       },
       memoryOperation: () {
         final products = _memoryDb['products'] as List<Product>;
@@ -741,11 +816,7 @@ class DatabaseHelper {
   Future<int> deleteSupplier(int id) async {
     return _executeDbOperation<int>(
       dbOperation: (Database db) async {
-        return await db.delete(
-          'suppliers',
-          where: 'id = ?',
-          whereArgs: [id],
-        );
+        return await db.delete('suppliers', where: 'id = ?', whereArgs: [id]);
       },
       memoryOperation: () {
         final suppliers = _memoryDb['suppliers'] as List<Supplier>;
@@ -843,11 +914,7 @@ class DatabaseHelper {
   Future<int> deleteClient(int id) async {
     return _executeDbOperation<int>(
       dbOperation: (Database db) async {
-        return await db.delete(
-          'clients',
-          where: 'id = ?',
-          whereArgs: [id],
-        );
+        return await db.delete('clients', where: 'id = ?', whereArgs: [id]);
       },
       memoryOperation: () {
         final clients = _memoryDb['clients'] as List<Client>;
@@ -944,11 +1011,7 @@ class DatabaseHelper {
   Future<int> deleteCart(int id) async {
     return _executeDbOperation<int>(
       dbOperation: (Database db) async {
-        return await db.delete(
-          'carts',
-          where: 'id = ?',
-          whereArgs: [id],
-        );
+        return await db.delete('carts', where: 'id = ?', whereArgs: [id]);
       },
       memoryOperation: () {
         final carts = _memoryDb['carts'] as List<Cart>;
@@ -1027,11 +1090,7 @@ class DatabaseHelper {
   Future<int> deleteCartItem(int id) async {
     return _executeDbOperation<int>(
       dbOperation: (Database db) async {
-        return await db.delete(
-          'cart_items',
-          where: 'id = ?',
-          whereArgs: [id],
-        );
+        return await db.delete('cart_items', where: 'id = ?', whereArgs: [id]);
       },
       memoryOperation: () {
         final items = _memoryDb['cart_items'] as List<CartItem>;
@@ -1042,25 +1101,359 @@ class DatabaseHelper {
     );
   }
 
+  // RECEIPT METHODS
+
+  // Insert a new receipt
+  Future<int> insertReceipt(Receipt receipt) async {
+    return _executeDbOperation<int>(
+      dbOperation: (Database db) async {
+        return await db.insert('receipts', receipt.toMap());
+      },
+      memoryOperation: () {
+        // Add to in-memory storage
+        final receipts = _memoryDb['receipts'] as List<Receipt>;
+        if (receipt.id == null) {
+          // Auto-increment ID
+          receipt = Receipt(
+            id: _idCounters['receipts']!,
+            date: receipt.date,
+            clientId: receipt.clientId,
+            totalAmount: receipt.totalAmount,
+            status: receipt.status,
+          );
+          _idCounters['receipts'] = _idCounters['receipts']! + 1;
+        }
+        receipts.add(receipt);
+        return receipt.id!;
+      },
+    );
+  }
+
+  // Get all receipts
+  Future<List<Receipt>> getReceipts() async {
+    return _executeDbOperation<List<Receipt>>(
+      dbOperation: (Database db) async {
+        final List<Map<String, dynamic>> maps = await db.query('receipts');
+        return List.generate(maps.length, (i) {
+          return Receipt.fromMap(maps[i]);
+        });
+      },
+      memoryOperation: () {
+        // Retrieve from in-memory storage
+        return _memoryDb['receipts'] as List<Receipt>;
+      },
+    );
+  }
+
+  // Get a specific receipt by ID
+  Future<Receipt?> getReceipt(int id) async {
+    return _executeDbOperation<Receipt?>(
+      dbOperation: (Database db) async {
+        final List<Map<String, dynamic>> maps = await db.query(
+          'receipts',
+          where: 'id = ?',
+          whereArgs: [id],
+        );
+
+        if (maps.isNotEmpty) {
+          return Receipt.fromMap(maps.first);
+        }
+        return null;
+      },
+      memoryOperation: () {
+        // Retrieve from in-memory storage
+        final receipts = _memoryDb['receipts'] as List<Receipt>;
+        try {
+          return receipts.firstWhere((receipt) => receipt.id == id);
+        } catch (e) {
+          return null;
+        }
+      },
+    );
+  }
+
+  // Update a receipt
+  Future<int> updateReceipt(Receipt receipt) async {
+    return _executeDbOperation<int>(
+      dbOperation: (Database db) async {
+        return await db.update(
+          'receipts',
+          receipt.toMap(),
+          where: 'id = ?',
+          whereArgs: [receipt.id],
+        );
+      },
+      memoryOperation: () {
+        // Update in-memory storage
+        final receipts = _memoryDb['receipts'] as List<Receipt>;
+        final index = receipts.indexWhere((r) => r.id == receipt.id);
+
+        if (index != -1) {
+          receipts[index] = receipt;
+          return 1;
+        }
+        return 0;
+      },
+    );
+  }
+
+  // Delete a receipt and its items
+  Future<int> deleteReceipt(int id) async {
+    return _executeDbOperation<int>(
+      dbOperation: (Database db) async {
+        // First delete associated receipt items
+        await db.delete(
+          'receipt_items',
+          where: 'receipt_id = ?',
+          whereArgs: [id],
+        );
+
+        // Then delete the receipt
+        return await db.delete('receipts', where: 'id = ?', whereArgs: [id]);
+      },
+      memoryOperation: () {
+        // Update in-memory storage
+        final receipts = _memoryDb['receipts'] as List<Receipt>;
+        final receiptItems = _memoryDb['receipt_items'] as List<ReceiptItem>;
+
+        // Remove related receipt items
+        receiptItems.removeWhere((item) => item.receiptId == id);
+
+        // Remove the receipt
+        final initialLength = receipts.length;
+        receipts.removeWhere((receipt) => receipt.id == id);
+        return initialLength - receipts.length;
+      },
+    );
+  }
+
+  // RECEIPT ITEM METHODS
+
+  // Insert a new receipt item
+  Future<int> insertReceiptItem(ReceiptItem item) async {
+    return _executeDbOperation<int>(
+      dbOperation: (Database db) async {
+        // Calculate the total value before inserting
+        final itemMap = item.toMap();
+        // Add the total which is calculated from price * quantity
+        itemMap['total'] = item.total;
+        return await db.insert('receipt_items', itemMap);
+      },
+      memoryOperation: () {
+        // Add to in-memory storage
+        final items = _memoryDb['receipt_items'] as List<ReceiptItem>;
+        if (item.id == null) {
+          // Auto-increment ID
+          item = ReceiptItem(
+            id: _idCounters['receipt_items']!,
+            receiptId: item.receiptId,
+            productId: item.productId,
+            quantity: item.quantity,
+            priceAtSale: item.priceAtSale,
+            total: item.total,
+          );
+          _idCounters['receipt_items'] = _idCounters['receipt_items']! + 1;
+        }
+        items.add(item);
+        return item.id!;
+      },
+    );
+  }
+
+  // Get all items for a specific receipt
+  Future<List<ReceiptItem>> getReceiptItems(int receiptId) async {
+    return _executeDbOperation<List<ReceiptItem>>(
+      dbOperation: (Database db) async {
+        final List<Map<String, dynamic>> maps = await db.query(
+          'receipt_items',
+          where: 'receipt_id = ?',
+          whereArgs: [receiptId],
+        );
+        return List.generate(maps.length, (i) {
+          return ReceiptItem.fromMap(maps[i]);
+        });
+      },
+      memoryOperation: () {
+        // Retrieve from in-memory storage
+        final items = _memoryDb['receipt_items'] as List<ReceiptItem>;
+        return items.where((item) => item.receiptId == receiptId).toList();
+      },
+    );
+  }
+
+  // Update a receipt item
+  Future<int> updateReceiptItem(ReceiptItem item) async {
+    return _executeDbOperation<int>(
+      dbOperation: (Database db) async {
+        // Calculate the total value before updating
+        final itemMap = item.toMap();
+        // Add the total which is calculated from price * quantity
+        itemMap['total'] = item.total;
+        return await db.update(
+          'receipt_items',
+          itemMap,
+          where: 'id = ?',
+          whereArgs: [item.id],
+        );
+      },
+      memoryOperation: () {
+        // Update in-memory storage
+        final items = _memoryDb['receipt_items'] as List<ReceiptItem>;
+        final index = items.indexWhere((i) => i.id == item.id);
+
+        if (index != -1) {
+          items[index] = item;
+          return 1;
+        }
+        return 0;
+      },
+    );
+  }
+
+  // Delete a receipt item
+  Future<int> deleteReceiptItem(int id) async {
+    return _executeDbOperation<int>(
+      dbOperation: (Database db) async {
+        return await db.delete(
+          'receipt_items',
+          where: 'id = ?',
+          whereArgs: [id],
+        );
+      },
+      memoryOperation: () {
+        // Update in-memory storage
+        final items = _memoryDb['receipt_items'] as List<ReceiptItem>;
+        final initialLength = items.length;
+        items.removeWhere((item) => item.id == id);
+        return initialLength - items.length;
+      },
+    );
+  }
+
+  // Get a receipt with all its details (items)
+  Future<Map<String, dynamic>> getReceiptWithDetails(int receiptId) async {
+    return _executeDbOperation<Map<String, dynamic>>(
+      dbOperation: (Database db) async {
+        // Get the receipt
+        final List<Map<String, dynamic>> receiptMaps = await db.query(
+          'receipts',
+          where: 'id = ?',
+          whereArgs: [receiptId],
+        );
+
+        if (receiptMaps.isEmpty) {
+          return {'receipt': null, 'items': <Map<String, dynamic>>[]};
+        }
+
+        final receipt = Receipt.fromMap(receiptMaps.first);
+
+        // Get the receipt items
+        final List<Map<String, dynamic>> itemMaps = await db.query(
+          'receipt_items',
+          where: 'receipt_id = ?',
+          whereArgs: [receiptId],
+        );
+
+        // Return both receipt and items
+        return {
+          'receipt': receipt,
+          'items': List.generate(itemMaps.length, (i) {
+            return ReceiptItem.fromMap(itemMaps[i]);
+          }),
+        };
+      },
+      memoryOperation: () {
+        // Retrieve from in-memory storage
+        final receipts = _memoryDb['receipts'] as List<Receipt>;
+        final receiptItems = _memoryDb['receipt_items'] as List<ReceiptItem>;
+
+        // Find receipt
+        final receipt = receipts.firstWhere(
+          (r) => r.id == receiptId,
+          orElse:
+              () => Receipt(
+                date: DateTime.now(),
+                status: 'completed', // Adding the required 'type' parameter
+              ),
+        );
+
+        if (receipt.id == null) {
+          return {'receipt': null, 'items': <Map<String, dynamic>>[]};
+        }
+
+        // Find items
+        final items =
+            receiptItems.where((item) => item.receiptId == receiptId).toList();
+
+        return {'receipt': receipt, 'items': items};
+      },
+    );
+  }
+
+  // Get all receipts with client names
+  Future<List<Map<String, dynamic>>> getReceiptsWithClientNames() async {
+    return _executeDbOperation<List<Map<String, dynamic>>>(
+      dbOperation: (Database db) async {
+        // Join receipts with clients to get client names
+        return await db.rawQuery('''
+          SELECT r.*, c.name as client_name
+          FROM receipts r
+          LEFT JOIN clients c ON r.client_id = c.id
+          ORDER BY r.date DESC
+        ''');
+      },
+      memoryOperation: () {
+        // In-memory implementation with join
+        final receipts = _memoryDb['receipts'] as List<Receipt>;
+        final clients = _memoryDb['clients'] as List<Client>;
+
+        // Map each receipt to include client name
+        return receipts.map((receipt) {
+          final clientName =
+              receipt.clientId != null
+                  ? clients
+                      .firstWhere(
+                        (c) => c.id == receipt.clientId,
+                        orElse: () => Client(name: 'Unknown'),
+                      )
+                      .name
+                  : null;
+
+          final Map<String, dynamic> result = receipt.toMap();
+          result['client_name'] = clientName;
+          return result;
+        }).toList();
+      },
+    );
+  }
+
   // Dashboard Methods
 
   /// Get total revenue within a date range
-  Future<double> getTotalRevenueInRange(String startDate, String endDate) async {
+  Future<double> getTotalRevenueInRange(
+    String startDate,
+    String endDate,
+  ) async {
     return _executeDbOperation<double>(
       dbOperation: (Database db) async {
         try {
           // Check if receipts table exists
-          final tables = await db.rawQuery("SELECT name FROM sqlite_master WHERE type='table' AND name='receipts';");
+          final tables = await db.rawQuery(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='receipts';",
+          );
           if (tables.isEmpty) {
             return 0.0;
           }
-          
-          final List<Map<String, dynamic>> result = await db.rawQuery(''' 
+
+          final List<Map<String, dynamic>> result = await db.rawQuery(
+            ''' 
             SELECT SUM(total_amount) as total_revenue
             FROM receipts
             WHERE date BETWEEN ? AND ? 
-          ''', [startDate, endDate]);
-          
+          ''',
+            [startDate, endDate],
+          );
+
           if (result.isNotEmpty && result[0]['total_revenue'] != null) {
             return (result[0]['total_revenue'] as num).toDouble();
           }
@@ -1074,15 +1467,19 @@ class DatabaseHelper {
         try {
           // Filter carts within the date range
           final carts = _memoryDb['carts'] as List<Cart>;
-          final matchingCarts = carts.where((cart) {
-            final cartDate = cart.date;
-            final start = DateTime.parse(startDate);
-            final end = DateTime.parse(endDate);
-            return cartDate.isAfter(start) && cartDate.isBefore(end);
-          }).toList();
-          
+          final matchingCarts =
+              carts.where((cart) {
+                final cartDate = cart.date;
+                final start = DateTime.parse(startDate);
+                final end = DateTime.parse(endDate);
+                return cartDate.isAfter(start) && cartDate.isBefore(end);
+              }).toList();
+
           // Sum up total amounts
-          return matchingCarts.fold<double>(0.0, (sum, cart) => sum + cart.totalAmount);
+          return matchingCarts.fold<double>(
+            0.0,
+            (sum, cart) => sum + cart.totalAmount,
+          );
         } catch (e) {
           print('Error calculating revenue from memory: $e');
           return 0.0;
@@ -1097,38 +1494,53 @@ class DatabaseHelper {
       dbOperation: (Database db) async {
         try {
           // Check if all required tables exist
-          final tables = await db.rawQuery("SELECT name FROM sqlite_master WHERE type='table' AND name='receipts';");
-          final itemTables = await db.rawQuery("SELECT name FROM sqlite_master WHERE type='table' AND name='cart_items';");
-          final productTables = await db.rawQuery("SELECT name FROM sqlite_master WHERE type='table' AND name='products';");
-          
+          final tables = await db.rawQuery(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='receipts';",
+          );
+          final itemTables = await db.rawQuery(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='cart_items';",
+          );
+          final productTables = await db.rawQuery(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='products';",
+          );
+
           if (tables.isEmpty || itemTables.isEmpty || productTables.isEmpty) {
             return 0.0;
           }
-          
+
           // Calculate total revenue
-          final List<Map<String, dynamic>> revenueResult = await db.rawQuery(''' 
+          final List<Map<String, dynamic>> revenueResult = await db.rawQuery(
+            ''' 
             SELECT SUM(total_amount) as total_revenue
             FROM receipts
             WHERE date BETWEEN ? AND ? 
-          ''', [startDate, endDate]);
-          
-          final double totalRevenue = revenueResult.isNotEmpty && revenueResult[0]['total_revenue'] != null
-            ? (revenueResult[0]['total_revenue'] as num).toDouble()
-            : 0.0;
-          
+          ''',
+            [startDate, endDate],
+          );
+
+          final double totalRevenue =
+              revenueResult.isNotEmpty &&
+                      revenueResult[0]['total_revenue'] != null
+                  ? (revenueResult[0]['total_revenue'] as num).toDouble()
+                  : 0.0;
+
           // Calculate total cost
-          final List<Map<String, dynamic>> costResult = await db.rawQuery(''' 
+          final List<Map<String, dynamic>> costResult = await db.rawQuery(
+            ''' 
             SELECT SUM(ci.quantity * p.buy_price) as total_cost
             FROM cart_items ci
             JOIN products p ON ci.product_id = p.id
             JOIN carts c ON ci.cart_id = c.id
             WHERE c.date BETWEEN ? AND ? 
-          ''', [startDate, endDate]);
-          
-          final double totalCost = costResult.isNotEmpty && costResult[0]['total_cost'] != null
-            ? (costResult[0]['total_cost'] as num).toDouble()
-            : 0.0;
-          
+          ''',
+            [startDate, endDate],
+          );
+
+          final double totalCost =
+              costResult.isNotEmpty && costResult[0]['total_cost'] != null
+                  ? (costResult[0]['total_cost'] as num).toDouble()
+                  : 0.0;
+
           return totalRevenue - totalCost;
         } catch (e) {
           print('Error getting total profit: $e');
@@ -1139,37 +1551,43 @@ class DatabaseHelper {
         try {
           // Calculate total revenue
           final carts = _memoryDb['carts'] as List<Cart>;
-          final matchingCarts = carts.where((cart) {
-            final cartDate = cart.date;
-            final start = DateTime.parse(startDate);
-            final end = DateTime.parse(endDate);
-            return cartDate.isAfter(start) && cartDate.isBefore(end);
-          }).toList();
-          
-          double totalRevenue = matchingCarts.fold<double>(0.0, (sum, cart) => sum + cart.totalAmount);
-          
+          final matchingCarts =
+              carts.where((cart) {
+                final cartDate = cart.date;
+                final start = DateTime.parse(startDate);
+                final end = DateTime.parse(endDate);
+                return cartDate.isAfter(start) && cartDate.isBefore(end);
+              }).toList();
+
+          double totalRevenue = matchingCarts.fold<double>(
+            0.0,
+            (sum, cart) => sum + cart.totalAmount,
+          );
+
           // Calculate total cost
           double totalCost = 0.0;
           final cartItems = _memoryDb['cart_items'] as List<CartItem>;
           final products = _memoryDb['products'] as List<Product>;
-          
+
           for (final cart in matchingCarts) {
             final cartId = cart.id!;
-            final itemsInCart = cartItems.where((item) => item.cartId == cartId);
-            
+            final itemsInCart = cartItems.where(
+              (item) => item.cartId == cartId,
+            );
+
             for (final item in itemsInCart) {
               final productId = item.productId;
               final product = products.firstWhere(
                 (p) => p.id == productId,
-                orElse: () => Product(id: -1, name: '', quantity: 0)
+                orElse: () => Product(id: -1, name: '', quantity: 0),
               );
-              
+
               if (product.id != -1) {
                 totalCost += item.quantity * (product.buyPrice ?? 0);
               }
             }
           }
-          
+
           return totalRevenue - totalCost;
         } catch (e) {
           print('Error calculating profit from memory: $e');
@@ -1185,15 +1603,20 @@ class DatabaseHelper {
       dbOperation: (Database db) async {
         try {
           // Check if all required tables exist
-          final tables = await db.rawQuery("SELECT name FROM sqlite_master WHERE type='table' AND name='cart_items';");
-          final productTables = await db.rawQuery("SELECT name FROM sqlite_master WHERE type='table' AND name='products';");
-          
+          final tables = await db.rawQuery(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='cart_items';",
+          );
+          final productTables = await db.rawQuery(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='products';",
+          );
+
           if (tables.isEmpty || productTables.isEmpty) {
             return {'products': <Map<String, dynamic>>[], 'total_sold': 0};
           }
-          
+
           // Get top selling products
-          final List<Map<String, dynamic>> results = await db.rawQuery(''' 
+          final List<Map<String, dynamic>> results = await db.rawQuery(
+            ''' 
             SELECT p.id, p.name, p.barcode, p.sell_price, 
                    SUM(ci.quantity) as quantity_sold,
                    SUM(ci.quantity * ci.price_at_sale) as total_sales
@@ -1202,18 +1625,21 @@ class DatabaseHelper {
             GROUP BY p.id
             ORDER BY quantity_sold DESC
             LIMIT ? 
-          ''', [limit]);
-          
+          ''',
+            [limit],
+          );
+
           // Get total number of products sold
           final List<Map<String, dynamic>> totalResult = await db.rawQuery(''' 
             SELECT SUM(quantity) as total_sold
             FROM cart_items 
           ''');
-          
-          final int totalSold = totalResult.isNotEmpty && totalResult[0]['total_sold'] != null
-            ? (totalResult[0]['total_sold'] as num).toInt()
-            : 0;
-          
+
+          final int totalSold =
+              totalResult.isNotEmpty && totalResult[0]['total_sold'] != null
+                  ? (totalResult[0]['total_sold'] as num).toInt()
+                  : 0;
+
           return {'products': results, 'total_sold': totalSold};
         } catch (e) {
           print('Error getting top selling products: $e');
@@ -1224,32 +1650,32 @@ class DatabaseHelper {
         try {
           final cartItems = _memoryDb['cart_items'] as List<CartItem>;
           final products = _memoryDb['products'] as List<Product>;
-          
+
           // Calculate quantity sold for each product
           final Map<int, int> quantitySold = {};
           final Map<int, double> totalSales = {};
-          
+
           for (final item in cartItems) {
             final productId = item.productId;
             final quantity = item.quantity;
             final sale = quantity * item.priceAtSale;
-            
+
             quantitySold[productId] = (quantitySold[productId] ?? 0) + quantity;
             totalSales[productId] = (totalSales[productId] ?? 0) + sale;
           }
-          
+
           // Create result with product details
           final List<Map<String, dynamic>> results = [];
-          
+
           for (final entry in quantitySold.entries) {
             final productId = entry.key;
             final quantity = entry.value;
-            
+
             final product = products.firstWhere(
               (p) => p.id == productId,
-              orElse: () => Product(id: -1, name: 'Unknown', quantity: 0)
+              orElse: () => Product(id: -1, name: 'Unknown', quantity: 0),
             );
-            
+
             if (product.id != -1) {
               results.add({
                 'id': product.id,
@@ -1261,14 +1687,21 @@ class DatabaseHelper {
               });
             }
           }
-          
+
           // Sort by quantity sold and limit
-          results.sort((a, b) => (b['quantity_sold'] as int).compareTo(a['quantity_sold'] as int));
+          results.sort(
+            (a, b) => (b['quantity_sold'] as int).compareTo(
+              a['quantity_sold'] as int,
+            ),
+          );
           final limitedResults = results.take(limit).toList();
-          
+
           // Calculate total sold
-          final totalSold = cartItems.fold<int>(0, (sum, item) => sum + item.quantity);
-          
+          final totalSold = cartItems.fold<int>(
+            0,
+            (sum, item) => sum + item.quantity,
+          );
+
           return {'products': limitedResults, 'total_sold': totalSold};
         } catch (e) {
           print('Error calculating top products from memory: $e');
@@ -1284,15 +1717,20 @@ class DatabaseHelper {
       dbOperation: (Database db) async {
         try {
           // Check if all required tables exist
-          final cartTables = await db.rawQuery("SELECT name FROM sqlite_master WHERE type='table' AND name='carts';");
-          final clientTables = await db.rawQuery("SELECT name FROM sqlite_master WHERE type='table' AND name='clients';");
-          
+          final cartTables = await db.rawQuery(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='carts';",
+          );
+          final clientTables = await db.rawQuery(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='clients';",
+          );
+
           if (cartTables.isEmpty || clientTables.isEmpty) {
             return {'clients': <Map<String, dynamic>>[], 'total_sales': 0};
           }
-          
+
           // Get top clients
-          final List<Map<String, dynamic>> results = await db.rawQuery(''' 
+          final List<Map<String, dynamic>> results = await db.rawQuery(
+            ''' 
             SELECT c.id, c.name, c.phone, c.points,
                    COUNT(ct.id) as order_count,
                    SUM(ct.total_amount) as total_spent
@@ -1301,19 +1739,22 @@ class DatabaseHelper {
             GROUP BY c.id
             ORDER BY total_spent DESC
             LIMIT ? 
-          ''', [limit]);
-          
+          ''',
+            [limit],
+          );
+
           // Get total sales across all clients
           final List<Map<String, dynamic>> totalResult = await db.rawQuery(''' 
             SELECT SUM(total_amount) as total_sales
             FROM carts
             WHERE client_id IS NOT NULL 
           ''');
-          
-          final double totalSales = totalResult.isNotEmpty && totalResult[0]['total_sales'] != null
-            ? (totalResult[0]['total_sales'] as num).toDouble()
-            : 0.0;
-          
+
+          final double totalSales =
+              totalResult.isNotEmpty && totalResult[0]['total_sales'] != null
+                  ? (totalResult[0]['total_sales'] as num).toDouble()
+                  : 0.0;
+
           return {'clients': results, 'total_sales': totalSales};
         } catch (e) {
           print('Error getting top clients: $e');
@@ -1324,10 +1765,10 @@ class DatabaseHelper {
         try {
           final carts = _memoryDb['carts'] as List<Cart>;
           final clients = _memoryDb['clients'] as List<Client>;
-          
+
           // Group carts by client ID
           final Map<int?, List<Cart>> cartsByClient = {};
-          
+
           for (final cart in carts) {
             if (cart.clientId != null) {
               if (!cartsByClient.containsKey(cart.clientId)) {
@@ -1336,23 +1777,26 @@ class DatabaseHelper {
               cartsByClient[cart.clientId]!.add(cart);
             }
           }
-          
+
           // Calculate metrics for each client
           final List<Map<String, dynamic>> results = [];
-          
+
           for (final entry in cartsByClient.entries) {
             final clientId = entry.key;
             final clientCarts = entry.value;
-            
+
             final client = clients.firstWhere(
               (c) => c.id == clientId,
-              orElse: () => Client(id: -1, name: 'Unknown')
+              orElse: () => Client(id: -1, name: 'Unknown'),
             );
-            
+
             if (client.id != -1) {
               final orderCount = clientCarts.length;
-              final totalSpent = clientCarts.fold<double>(0, (sum, cart) => sum + cart.totalAmount);
-              
+              final totalSpent = clientCarts.fold<double>(
+                0,
+                (sum, cart) => sum + cart.totalAmount,
+              );
+
               results.add({
                 'id': client.id,
                 'name': client.name,
@@ -1363,16 +1807,20 @@ class DatabaseHelper {
               });
             }
           }
-          
+
           // Sort by total spent and limit
-          results.sort((a, b) => (b['total_spent'] as double).compareTo(a['total_spent'] as double));
+          results.sort(
+            (a, b) => (b['total_spent'] as double).compareTo(
+              a['total_spent'] as double,
+            ),
+          );
           final limitedResults = results.take(limit).toList();
-          
+
           // Calculate total sales
           final totalSales = carts
-            .where((cart) => cart.clientId != null)
-            .fold<double>(0, (sum, cart) => sum + cart.totalAmount);
-          
+              .where((cart) => cart.clientId != null)
+              .fold<double>(0, (sum, cart) => sum + cart.totalAmount);
+
           return {'clients': limitedResults, 'total_sales': totalSales};
         } catch (e) {
           print('Error calculating top clients from memory: $e');
@@ -1382,9 +1830,396 @@ class DatabaseHelper {
     );
   }
 
+  // DASHBOARD METHODS
+
+  /// Get products with low stock for inventory alerts
+  Future<List<Map<String, dynamic>>> getProductsWithLowStock(
+    int limit, {
+    int threshold = 5,
+  }) async {
+    return _executeDbOperation<List<Map<String, dynamic>>>(
+      dbOperation: (Database db) async {
+        // First check if the products table exists
+        final tables = await db.rawQuery(
+          "SELECT name FROM sqlite_master WHERE type='table' AND name='products'",
+        );
+
+        if (tables.isEmpty) {
+          return [];
+        }
+
+        // Check if the categories table exists
+        final catTables = await db.rawQuery(
+          "SELECT name FROM sqlite_master WHERE type='table' AND name='categories'",
+        );
+
+        // Check if the suppliers table exists
+        final suppTables = await db.rawQuery(
+          "SELECT name FROM sqlite_master WHERE type='table' AND name='suppliers'",
+        );
+
+        // Build query based on available tables
+        String query = 'SELECT p.* ';
+        List<String> joins = [];
+
+        if (catTables.isNotEmpty) {
+          query += ', c.name as category_name ';
+          joins.add('LEFT JOIN categories c ON p.category_id = c.id');
+        }
+
+        if (suppTables.isNotEmpty) {
+          query += ', s.name as supplier_name ';
+          joins.add('LEFT JOIN suppliers s ON p.supplier_id = s.id');
+        }
+
+        query += 'FROM products p ';
+        query += joins.join(' ');
+        query += ' WHERE p.quantity <= ? ORDER BY p.quantity ASC LIMIT ?';
+
+        final List<Map<String, dynamic>> result = await db.rawQuery(query, [
+          threshold,
+          limit,
+        ]);
+
+        return result;
+      },
+      memoryOperation: () {
+        // In-memory implementation
+        final products = _memoryDb['products'] as List<Product>;
+        final categories = _memoryDb['categories'] as List<Category>;
+        final suppliers = _memoryDb['suppliers'] as List<Supplier>;
+
+        // Filter products with quantity below threshold
+        final lowStockProducts =
+            products.where((p) => p.quantity <= threshold).take(limit).map((p) {
+              // Convert to map and add category/supplier names if available
+              final Map<String, dynamic> result = p.toMap();
+
+              if (p.categoryId != null) {
+                try {
+                  final category = categories.firstWhere(
+                    (c) => c.id == p.categoryId,
+                  );
+                  result['category_name'] = category.name;
+                } catch (_) {}
+              }
+
+              if (p.supplierId != null) {
+                try {
+                  final supplier = suppliers.firstWhere(
+                    (s) => s.id == p.supplierId,
+                  );
+                  result['supplier_name'] = supplier.name;
+                } catch (_) {}
+              }
+
+              return result;
+            }).toList();
+
+        return lowStockProducts;
+      },
+    );
+  }
+
+  /// Get recent receipts with details for the dashboard
+  Future<Map<String, dynamic>> getReceiptsWithDetails(int limit) async {
+    return _executeDbOperation<Map<String, dynamic>>(
+      dbOperation: (Database db) async {
+        // First check if receipts table exists
+        final tables = await db.rawQuery(
+          "SELECT name FROM sqlite_master WHERE type='table' AND name='receipts'",
+        );
+
+        if (tables.isEmpty) {
+          return {'receipts': <Map<String, dynamic>>[]};
+        }
+
+        // Get recent receipts with client names if clients table exists
+        String query = '''SELECT r.*''';
+
+        // Check if clients table exists
+        final clientTables = await db.rawQuery(
+          "SELECT name FROM sqlite_master WHERE type='table' AND name='clients'",
+        );
+
+        if (clientTables.isNotEmpty) {
+          query += ''', c.name as client_name
+            FROM receipts r
+            LEFT JOIN clients c ON r.client_id = c.id
+          ''';
+        } else {
+          query += '''
+            FROM receipts r
+          ''';
+        }
+
+        query += '''
+          ORDER BY r.date DESC
+          LIMIT ?
+        ''';
+
+        final List<Map<String, dynamic>> receipts = await db.rawQuery(query, [
+          limit,
+        ]);
+
+        // For each receipt, get its items if receipt_items table exists
+        final itemTables = await db.rawQuery(
+          "SELECT name FROM sqlite_master WHERE type='table' AND name='receipt_items'",
+        );
+
+        if (itemTables.isNotEmpty) {
+          for (var receipt in receipts) {
+            final receiptId = receipt['id'];
+
+            // Check if products table exists
+            final productTables = await db.rawQuery(
+              "SELECT name FROM sqlite_master WHERE type='table' AND name='products'",
+            );
+
+            String itemQuery;
+            if (productTables.isNotEmpty) {
+              itemQuery = '''
+                SELECT ri.*, p.name as product_name, p.barcode as product_barcode
+                FROM receipt_items ri
+                JOIN products p ON ri.product_id = p.id
+                WHERE ri.receipt_id = ?
+              ''';
+            } else {
+              itemQuery = '''
+                SELECT ri.*
+                FROM receipt_items ri
+                WHERE ri.receipt_id = ?
+              ''';
+            }
+
+            final List<Map<String, dynamic>> items = await db.rawQuery(
+              itemQuery,
+              [receiptId],
+            );
+            receipt['items'] = items;
+          }
+        }
+
+        return {'receipts': receipts};
+      },
+      memoryOperation: () {
+        // In-memory implementation
+        final receipts = _memoryDb['receipts'] as List<Receipt>;
+        final receiptItems = _memoryDb['receipt_items'] as List<ReceiptItem>;
+        final products = _memoryDb['products'] as List<Product>;
+        final clients = _memoryDb['clients'] as List<Client>;
+
+        // Sort receipts by date (descending) and take the most recent ones
+        final sortedReceipts = List<Receipt>.from(receipts);
+        sortedReceipts.sort((a, b) => b.date.compareTo(a.date));
+        final limitedReceipts = sortedReceipts.take(limit).toList();
+
+        // Prepare receipts with client names and items
+        final List<Map<String, dynamic>> result = [];
+
+        for (final receipt in limitedReceipts) {
+          final Map<String, dynamic> receiptMap = receipt.toMap();
+
+          // Add client name if available
+          if (receipt.clientId != null) {
+            try {
+              final client = clients.firstWhere(
+                (c) => c.id == receipt.clientId,
+              );
+              receiptMap['client_name'] = client.name;
+            } catch (_) {}
+          }
+
+          // Add items if available
+          final items =
+              receiptItems
+                  .where((item) => item.receiptId == receipt.id!)
+                  .toList();
+          final itemsWithDetails =
+              items.map((item) {
+                final Map<String, dynamic> itemMap = item.toMap();
+
+                // Add product details if available
+                try {
+                  final product = products.firstWhere(
+                    (p) => p.id == item.productId,
+                  );
+                  itemMap['product_name'] = product.name;
+                  itemMap['product_barcode'] = product.barcode;
+                } catch (_) {}
+
+                return itemMap;
+              }).toList();
+
+          receiptMap['items'] = itemsWithDetails;
+          result.add(receiptMap);
+        }
+
+        return {'receipts': result};
+      },
+    );
+  }
+
+  /// Get monthly sales summary for charts
+  Future<List<Map<String, dynamic>>> getMonthlySalesSummary(int months) async {
+    return _executeDbOperation<List<Map<String, dynamic>>>(
+      dbOperation: (Database db) async {
+        final DateTime now = DateTime.now();
+        final List<Map<String, dynamic>> result = [];
+
+        // Check if tables exist
+        final receiptTables = await db.rawQuery(
+          "SELECT name FROM sqlite_master WHERE type='table' AND name='receipts'",
+        );
+
+        if (receiptTables.isEmpty) {
+          return [];
+        }
+
+        final receiptItemTables = await db.rawQuery(
+          "SELECT name FROM sqlite_master WHERE type='table' AND name='receipt_items'",
+        );
+
+        final productTables = await db.rawQuery(
+          "SELECT name FROM sqlite_master WHERE type='table' AND name='products'",
+        );
+
+        if (receiptItemTables.isEmpty || productTables.isEmpty) {
+          return [];
+        }
+
+        for (int i = months - 1; i >= 0; i--) {
+          final date = DateTime(now.year, now.month - i, 1);
+          final nextMonth =
+              i > 0
+                  ? DateTime(now.year, now.month - i + 1, 1)
+                  : DateTime(now.year, now.month + 1, 1);
+
+          final startDateStr = DateFormat('yyyy-MM-dd').format(date);
+          final endDateStr = DateFormat(
+            'yyyy-MM-dd',
+          ).format(nextMonth.subtract(const Duration(days: 1)));
+
+          // Query total sales for this month
+          final sales = await db.rawQuery(
+            '''
+            SELECT SUM(total_amount) as revenue
+            FROM receipts
+            WHERE date BETWEEN ? AND ?
+          ''',
+            [startDateStr, endDateStr],
+          );
+
+          final revenue =
+              sales.isNotEmpty && sales[0]['revenue'] != null
+                  ? (sales[0]['revenue'] as num).toDouble()
+                  : 0.0;
+
+          // Query costs for this month to calculate profit (if we have buy_price)
+          final costs = await db.rawQuery(
+            '''
+            SELECT SUM(ri.quantity * p.buy_price) as total_cost
+            FROM receipt_items ri
+            JOIN products p ON ri.product_id = p.id
+            JOIN receipts r ON ri.receipt_id = r.id
+            WHERE r.date BETWEEN ? AND ?
+          ''',
+            [startDateStr, endDateStr],
+          );
+
+          final totalCost =
+              costs.isNotEmpty && costs[0]['total_cost'] != null
+                  ? (costs[0]['total_cost'] as num).toDouble()
+                  : 0.0;
+
+          final profit = revenue - totalCost;
+
+          result.add({
+            'date': date,
+            'month': DateFormat('MMM yyyy').format(date),
+            'revenue': revenue,
+            'profit': profit,
+          });
+        }
+
+        return result;
+      },
+      memoryOperation: () {
+        // In-memory implementation
+        final DateTime now = DateTime.now();
+        final List<Map<String, dynamic>> result = [];
+
+        final receipts = _memoryDb['receipts'] as List<Receipt>;
+        final receiptItems = _memoryDb['receipt_items'] as List<ReceiptItem>;
+        final products = _memoryDb['products'] as List<Product>;
+
+        for (int i = months - 1; i >= 0; i--) {
+          final date = DateTime(now.year, now.month - i, 1);
+          final nextMonth =
+              i > 0
+                  ? DateTime(now.year, now.month - i + 1, 1)
+                  : DateTime(now.year, now.month + 1, 1);
+
+          // Filter receipts for this month
+          final monthReceipts =
+              receipts
+                  .where(
+                    (r) =>
+                        r.date.isAfter(
+                          date.subtract(const Duration(days: 1)),
+                        ) &&
+                        r.date.isBefore(nextMonth),
+                  )
+                  .toList();
+
+          // Calculate total revenue for the month
+          final revenue = monthReceipts.fold(
+            0.0,
+            (sum, r) => sum + r.totalAmount,
+          );
+
+          // Calculate cost for profit calculation
+          double totalCost = 0.0;
+          for (final receipt in monthReceipts) {
+            if (receipt.id != null) {
+              final items =
+                  receiptItems
+                      .where((item) => item.receiptId == receipt.id!)
+                      .toList();
+
+              for (final item in items) {
+                try {
+                  final product = products.firstWhere(
+                    (p) => p.id == item.productId,
+                  );
+                  if (product.buyPrice != null) {
+                    totalCost += item.quantity * product.buyPrice!;
+                  }
+                } catch (_) {}
+              }
+            }
+          }
+
+          final profit = revenue - totalCost;
+
+          result.add({
+            'date': date,
+            'month': DateFormat('MMM yyyy').format(date),
+            'revenue': revenue,
+            'profit': profit,
+          });
+        }
+
+        return result;
+      },
+    );
+  }
+
   // Empty method - we don't add sample data anymore, letting users manage their own data
   Future<void> _addSampleData() async {
     // No sample data is added, allowing users to start with a clean database
-    print('Sample data addition skipped - users will start with a clean database');
+    print(
+      'Sample data addition skipped - users will start with a clean database',
+    );
   }
 }
