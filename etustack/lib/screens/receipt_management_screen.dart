@@ -103,8 +103,8 @@ class _ReceiptManagementScreenState extends State<ReceiptManagementScreen> {
                             final receipt = filteredReceipts[index];
                             final date = DateTime.parse(receipt['date']);
                             final status = receipt['status'] ?? 'pending';
-                            final totalAmount = receipt['total_amount'] != null
-                                ? receipt['total_amount'].toDouble()
+                            final total = receipt['total'] != null
+                                ? receipt['total'].toDouble()
                                 : 0.0;
                             final clientName = receipt['client_name'] ?? 'Walk-in Customer';
 
@@ -158,7 +158,7 @@ class _ReceiptManagementScreenState extends State<ReceiptManagementScreen> {
                                     crossAxisAlignment: CrossAxisAlignment.end,
                                     children: [
                                       Text(
-                                        '\$${totalAmount.toStringAsFixed(2)}',
+                                        '\$${total.toStringAsFixed(2)}',
                                         style: const TextStyle(
                                           fontWeight: FontWeight.bold,
                                           fontSize: 16,
@@ -294,7 +294,7 @@ class _ReceiptFormScreenState extends State<ReceiptFormScreen> {
   List<Product> _products = [];
   
   bool _isLoading = true;
-  double _totalAmount = 0.0;
+  double _total = 0.0;
 
   @override
   void initState() {
@@ -347,7 +347,7 @@ class _ReceiptFormScreenState extends State<ReceiptFormScreen> {
       total += item.total;
     }
     setState(() {
-      _totalAmount = total;
+      _total = total;
     });
   }
 
@@ -393,7 +393,7 @@ class _ReceiptFormScreenState extends State<ReceiptFormScreen> {
           date: DateTime.now(),
           clientId: _selectedClient?.id,
           type: 'sale', // Added required type field
-          total: _totalAmount,
+          total: _total,
           status: 'pending',
         );
         
@@ -553,7 +553,7 @@ class _ReceiptFormScreenState extends State<ReceiptFormScreen> {
                               ),
                             ),
                             Text(
-                              '\$${_totalAmount.toStringAsFixed(2)}',
+                              '\$${_total.toStringAsFixed(2)}',
                               style: const TextStyle(
                                 fontSize: 18,
                                 fontWeight: FontWeight.bold,
@@ -870,8 +870,8 @@ class _ReceiptDetailScreenState extends State<ReceiptDetailScreen> {
       );
     }
     
-    final receipt = Receipt.fromMap(_receiptData!['receipt']);
-    final items = _receiptData!['items'] as List<Map<String, dynamic>>;
+    final receipt = _receiptData!['receipt'];
+    final items = _receiptData!['items'].toList();
     final client = _receiptData!['client'];
     
     return Scaffold(
@@ -966,14 +966,23 @@ class _ReceiptDetailScreenState extends State<ReceiptDetailScreen> {
                 itemCount: items.length,
                 separatorBuilder: (context, index) => const Divider(),
                 itemBuilder: (context, index) {
-                  final item = items[index];
-                  final quantity = item['quantity'];
-                  final priceAtSale = item['price_at_sale'].toDouble();
-                  final total = item['total'].toDouble();
-                  final productName = item['product_name'] ?? 'Unknown Product';
+                  final item = items[index] as ReceiptItem;
+                  final quantity = item.quantity;
+                  final priceAtSale = item.priceAtSale.toDouble();
+                  final total = item.total.toDouble();
+                  final productName = (_dbHelper.getProductById(item.productId) as Future<Product?>).then((product) => product?.name ?? 'Unknown Product');
                   
                   return ListTile(
-                    title: Text(productName),
+                    title: FutureBuilder(
+                      future: productName,
+                      builder: (context, snapshot) {
+                        if (snapshot.hasData) {
+                          return Text(snapshot.data!);
+                        } else {
+                          return const Text('Unknown Product');
+                        }
+                      },
+                    ),
                     subtitle: Text('${quantity} x \$${priceAtSale.toStringAsFixed(2)}'),
                     trailing: Text(
                       '\$${total.toStringAsFixed(2)}',
