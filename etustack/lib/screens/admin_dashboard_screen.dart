@@ -3,7 +3,6 @@ import 'package:intl/intl.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'dart:math' as math;
 import '../services/database_helper.dart';
-import '../services/database_helper_dashboard.dart';
 import '../utils/app_constants.dart';
 
 class AdminDashboardScreen extends StatefulWidget {
@@ -15,7 +14,6 @@ class AdminDashboardScreen extends StatefulWidget {
 
 class _AdminDashboardScreenState extends State<AdminDashboardScreen> with SingleTickerProviderStateMixin {
   final DatabaseHelper _dbHelper = DatabaseHelper();
-  final DatabaseHelperDashboard _dashboardHelper = DatabaseHelperDashboard();
   late TabController _tabController;
   bool _isLoading = true;
   
@@ -52,7 +50,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Single
     
     try {
       // Initialize dashboard database helper
-      await _dashboardHelper.initialize();
+      await _dbHelper.initialize();
       
       // Format dates for SQLite
       final startDateStr = DateFormat('yyyy-MM-dd').format(_startDate);
@@ -67,13 +65,13 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Single
       final topClientsData = await _dbHelper.getTopClients(5);
       
       // Get recent receipts from dashboard helper
-      final receiptData = await _dashboardHelper.getReceiptsWithDetails(10);
+      final receiptData = await _dbHelper.getReceiptsWithDetails(10);
       
       // Get inventory alerts (products with low stock) from dashboard helper
-      final inventoryAlerts = await _dashboardHelper.getProductsWithLowStock(10);
+      final inventoryAlerts = await _dbHelper.getProductsWithLowStock(10);
       
       // Get monthly sales data from dashboard helper
-      final monthlySales = await _dashboardHelper.getMonthlySalesSummary(6);
+      final monthlySales = await _dbHelper.getMonthlySalesSummary(6);
       
       setState(() {
         _totalRevenue = revenue;
@@ -135,101 +133,140 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Single
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : Column(
-              children: [
-                // Date Range Selector
-                Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Row(
-                    children: [
-                      const Text('Date Range: '),
-                      Expanded(
-                        child: OutlinedButton(
-                          onPressed: () => _selectDateRange(context),
-                          child: Text(
-                            '${DateFormat('MMM d, y').format(_startDate)} - ${DateFormat('MMM d, y').format(_endDate)}',
+      // Configure to handle keyboard appearance
+      resizeToAvoidBottomInset: true,
+      body: SafeArea(
+        child: _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : Column(
+                children: [
+                  // Date Range Selector - Kept outside scrolling area as a fixed header
+                  Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Row(
+                      children: [
+                        const Text('Date Range: '),
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () => _selectDateRange(context),
+                            child: Text(
+                              '${DateFormat('MMM d, y').format(_startDate)} - ${DateFormat('MMM d, y').format(_endDate)}',
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ),
                         ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.refresh),
-                        onPressed: _loadDashboardData,
-                        tooltip: 'Refresh Data',
-                      ),
-                    ],
+                        IconButton(
+                          icon: const Icon(Icons.refresh),
+                          onPressed: _loadDashboardData,
+                          tooltip: 'Refresh Data',
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-                
-                // Dashboard Summary Cards
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: _buildSummaryCard(
-                          'Total Revenue',
-                          '\$${_totalRevenue.toStringAsFixed(2)}',
-                          Icons.attach_money,
-                          Colors.green.shade400,
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: _buildSummaryCard(
-                          'Total Profit',
-                          '\$${_totalProfit.toStringAsFixed(2)}',
-                          Icons.trending_up,
-                          Colors.blue.shade400,
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: _buildSummaryCard(
-                          'Profit Margin',
-                          _totalRevenue > 0
-                              ? '${((_totalProfit / _totalRevenue) * 100).toStringAsFixed(1)}%'
-                              : '0%',
-                          Icons.pie_chart,
-                          Colors.purple.shade400,
-                        ),
-                      ),
-                    ],
+                  
+                  // Summary Cards - Use Wrap for better responsiveness on small screens
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        // Determine if we should stack cards vertically on small screens
+                        final isSmallScreen = constraints.maxWidth < 600;
+                        
+                        return isSmallScreen
+                          ? Column(
+                              children: [
+                                _buildSummaryCard(
+                                  'Total Revenue',
+                                  '\$${_totalRevenue.toStringAsFixed(2)}',
+                                  Icons.attach_money,
+                                  Colors.green.shade400,
+                                ),
+                                const SizedBox(height: 8),
+                                _buildSummaryCard(
+                                  'Total Profit',
+                                  '\$${_totalProfit.toStringAsFixed(2)}',
+                                  Icons.trending_up,
+                                  Colors.blue.shade400,
+                                ),
+                                const SizedBox(height: 8),
+                                _buildSummaryCard(
+                                  'Profit Margin',
+                                  _totalRevenue > 0
+                                      ? '${((_totalProfit / _totalRevenue) * 100).toStringAsFixed(1)}%'
+                                      : '0%',
+                                  Icons.pie_chart,
+                                  Colors.purple.shade400,
+                                ),
+                              ],
+                            )
+                          : Row(
+                              children: [
+                                Expanded(
+                                  child: _buildSummaryCard(
+                                    'Total Revenue',
+                                    '\$${_totalRevenue.toStringAsFixed(2)}',
+                                    Icons.attach_money,
+                                    Colors.green.shade400,
+                                  ),
+                                ),
+                                const SizedBox(width: 16),
+                                Expanded(
+                                  child: _buildSummaryCard(
+                                    'Total Profit',
+                                    '\$${_totalProfit.toStringAsFixed(2)}',
+                                    Icons.trending_up,
+                                    Colors.blue.shade400,
+                                  ),
+                                ),
+                                const SizedBox(width: 16),
+                                Expanded(
+                                  child: _buildSummaryCard(
+                                    'Profit Margin',
+                                    _totalRevenue > 0
+                                        ? '${((_totalProfit / _totalRevenue) * 100).toStringAsFixed(1)}%'
+                                        : '0%',
+                                    Icons.pie_chart,
+                                    Colors.purple.shade400,
+                                  ),
+                                ),
+                              ],
+                            );
+                      },
+                    ),
                   ),
-                ),
-                
-                // Tab Bar for different statistics
-                TabBar(
-                  controller: _tabController,
-                  isScrollable: true,
-                  tabs: const [
-                    Tab(text: 'Sales Trends'),
-                    Tab(text: 'Top Products'),
-                    Tab(text: 'Top Clients'),
-                    Tab(text: 'Receipt History'),
-                    Tab(text: 'Inventory Alerts'),
-                  ],
-                  labelColor: AppConstants.primaryColor,
-                  unselectedLabelColor: Colors.grey,
-                  indicatorColor: AppConstants.primaryColor,
-                ),
-                
-                // Tab content
-                Expanded(
-                  child: TabBarView(
+                  
+                  // Tab Bar for different statistics
+                  TabBar(
                     controller: _tabController,
-                    children: [
-                      _buildSalesTrendsTab(),
-                      _buildTopProductsTab(),
-                      _buildTopClientsTab(),
-                      _buildReceiptHistoryTab(),
-                      _buildInventoryAlertsTab(),
+                    isScrollable: true,
+                    tabs: const [
+                      Tab(text: 'Sales Trends'),
+                      Tab(text: 'Top Products'),
+                      Tab(text: 'Top Clients'),
+                      Tab(text: 'Receipt History'),
+                      Tab(text: 'Inventory Alerts'),
                     ],
+                    labelColor: AppConstants.primaryColor,
+                    unselectedLabelColor: Colors.grey,
+                    indicatorColor: AppConstants.primaryColor,
                   ),
-                ),
-              ],
-            ),
+                  
+                  // Tab content - Main scrollable area
+                  Expanded(
+                    child: TabBarView(
+                      controller: _tabController,
+                      children: [
+                        _buildSalesTrendsTab(),
+                        _buildTopProductsTab(),
+                        _buildTopClientsTab(),
+                        _buildReceiptHistoryTab(),
+                        _buildInventoryAlertsTab(),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+      ),
     );
   }
   
@@ -278,31 +315,55 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Single
       return const Center(child: Text('No sales data available'));
     }
     
-    return Padding(
-      padding: const EdgeInsets.all(16.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Monthly Sales Trends',
-            style: AppConstants.subheadingStyle,
-          ),
-          const SizedBox(height: 16),
-          Expanded(
-            child: LineChart(
-              LineChartData(
-                gridData: FlGridData(show: false),
-                titlesData: FlTitlesData(
-                  bottomTitles: AxisTitles(
-                    sideTitles: SideTitles(
-                      showTitles: true,
-                      getTitlesWidget: (value, meta) {
-                        if (value.toInt() >= 0 && value.toInt() < _monthlySales.length) {
-                          final date = _monthlySales[value.toInt()]['date'] as DateTime;
+    return SingleChildScrollView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Monthly Sales Trends',
+              style: AppConstants.subheadingStyle,
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              height: 300, // Fixed height for chart
+              child: LineChart(
+                LineChartData(
+                  gridData: FlGridData(show: false),
+                  titlesData: FlTitlesData(
+                    bottomTitles: AxisTitles(
+                      sideTitles: SideTitles(
+                        showTitles: true,
+                        getTitlesWidget: (value, meta) {
+                          if (value.toInt() >= 0 && value.toInt() < _monthlySales.length) {
+                            final date = _monthlySales[value.toInt()]['date'] as DateTime;
+                            return Padding(
+                              padding: const EdgeInsets.only(top: 8.0),
+                              child: Text(
+                                DateFormat('MMM').format(date),
+                                style: const TextStyle(
+                                  color: Color(0xff68737d),
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            );
+                          }
+                          return const Text('');
+                        },
+                        reservedSize: 30,
+                      ),
+                    ),
+                    leftTitles: AxisTitles(
+                      sideTitles: SideTitles(
+                        showTitles: true,
+                        getTitlesWidget: (value, meta) {
                           return Padding(
-                            padding: const EdgeInsets.only(top: 8.0),
+                            padding: const EdgeInsets.only(right: 8.0),
                             child: Text(
-                              DateFormat('MMM').format(date),
+                              '\$${value.toInt()}',
                               style: const TextStyle(
                                 color: Color(0xff68737d),
                                 fontWeight: FontWeight.bold,
@@ -310,94 +371,74 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Single
                               ),
                             ),
                           );
-                        }
-                        return const Text('');
-                      },
-                      reservedSize: 30,
+                        },
+                        reservedSize: 50,
+                      ),
                     ),
+                    topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                    rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
                   ),
-                  leftTitles: AxisTitles(
-                    sideTitles: SideTitles(
-                      showTitles: true,
-                      getTitlesWidget: (value, meta) {
-                        return Padding(
-                          padding: const EdgeInsets.only(right: 8.0),
-                          child: Text(
-                            '\$${value.toInt()}',
-                            style: const TextStyle(
-                              color: Color(0xff68737d),
-                              fontWeight: FontWeight.bold,
-                              fontSize: 12,
-                            ),
-                          ),
+                  borderData: FlBorderData(
+                    show: true,
+                    border: Border.all(color: const Color(0xff37434d), width: 1),
+                  ),
+                  minX: 0,
+                  maxX: _monthlySales.length - 1.0,
+                  minY: 0,
+                  maxY: _monthlySales.fold<double>(0, (max, item) => 
+                      math.max(max, item['revenue'] as double)) * 1.2,
+                  lineBarsData: [
+                    // Revenue Line
+                    LineChartBarData(
+                      spots: List.generate(_monthlySales.length, (index) {
+                        return FlSpot(
+                          index.toDouble(), 
+                          _monthlySales[index]['revenue'] as double
                         );
-                      },
-                      reservedSize: 50,
+                      }),
+                      isCurved: true,
+                      color: Colors.blue,
+                      barWidth: 3,
+                      isStrokeCapRound: true,
+                      dotData: FlDotData(show: true),
+                      belowBarData: BarAreaData(
+                        show: true,
+                        color: Colors.blue.withOpacity(0.2),
+                      ),
                     ),
-                  ),
-                  topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                  rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                    // Profit Line
+                    LineChartBarData(
+                      spots: List.generate(_monthlySales.length, (index) {
+                        return FlSpot(
+                          index.toDouble(), 
+                          _monthlySales[index]['profit'] as double
+                        );
+                      }),
+                      isCurved: true,
+                      color: Colors.green,
+                      barWidth: 3,
+                      isStrokeCapRound: true,
+                      dotData: FlDotData(show: true),
+                      belowBarData: BarAreaData(
+                        show: true,
+                        color: Colors.green.withOpacity(0.2),
+                      ),
+                    ),
+                  ],
                 ),
-                borderData: FlBorderData(
-                  show: true,
-                  border: Border.all(color: const Color(0xff37434d), width: 1),
-                ),
-                minX: 0,
-                maxX: _monthlySales.length - 1.0,
-                minY: 0,
-                maxY: _monthlySales.fold<double>(0, (max, item) => 
-                    math.max(max, item['revenue'] as double)) * 1.2,
-                lineBarsData: [
-                  // Revenue Line
-                  LineChartBarData(
-                    spots: List.generate(_monthlySales.length, (index) {
-                      return FlSpot(
-                        index.toDouble(), 
-                        _monthlySales[index]['revenue'] as double
-                      );
-                    }),
-                    isCurved: true,
-                    color: Colors.blue,
-                    barWidth: 3,
-                    isStrokeCapRound: true,
-                    dotData: FlDotData(show: true),
-                    belowBarData: BarAreaData(
-                      show: true,
-                      color: Colors.blue.withOpacity(0.2),
-                    ),
-                  ),
-                  // Profit Line
-                  LineChartBarData(
-                    spots: List.generate(_monthlySales.length, (index) {
-                      return FlSpot(
-                        index.toDouble(), 
-                        _monthlySales[index]['profit'] as double
-                      );
-                    }),
-                    isCurved: true,
-                    color: Colors.green,
-                    barWidth: 3,
-                    isStrokeCapRound: true,
-                    dotData: FlDotData(show: true),
-                    belowBarData: BarAreaData(
-                      show: true,
-                      color: Colors.green.withOpacity(0.2),
-                    ),
-                  ),
-                ],
               ),
             ),
-          ),
-          const SizedBox(height: 16),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              _buildLegendItem('Revenue', Colors.blue),
-              const SizedBox(width: 16),
-              _buildLegendItem('Profit', Colors.green),
-            ],
-          ),
-        ],
+            const SizedBox(height: 16),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                _buildLegendItem('Revenue', Colors.blue),
+                const SizedBox(width: 16),
+                _buildLegendItem('Profit', Colors.green),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -407,18 +448,21 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Single
       return const Center(child: Text('No product data available'));
     }
     
-    return Padding(
-      padding: const EdgeInsets.all(16.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Top Selling Products',
-            style: AppConstants.subheadingStyle,
-          ),
-          const SizedBox(height: 16),
-          Expanded(
-            child: ListView.builder(
+    return SingleChildScrollView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Top Selling Products',
+              style: AppConstants.subheadingStyle,
+            ),
+            const SizedBox(height: 16),
+            ListView.builder(
+              shrinkWrap: true, // Important to work inside SingleChildScrollView
+              physics: const NeverScrollableScrollPhysics(), // Prevents nested scrolling issues
               itemCount: _topProducts.length,
               itemBuilder: (context, index) {
                 final product = _topProducts[index];
@@ -453,8 +497,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Single
                 );
               },
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -464,18 +508,21 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Single
       return const Center(child: Text('No client data available'));
     }
     
-    return Padding(
-      padding: const EdgeInsets.all(16.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Top Clients by Revenue',
-            style: AppConstants.subheadingStyle,
-          ),
-          const SizedBox(height: 16),
-          Expanded(
-            child: ListView.builder(
+    return SingleChildScrollView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Top Clients',
+              style: AppConstants.subheadingStyle,
+            ),
+            const SizedBox(height: 16),
+            ListView.builder(
+              shrinkWrap: true, // Important to work inside SingleChildScrollView
+              physics: const NeverScrollableScrollPhysics(), // Prevents nested scrolling issues
               itemCount: _topClients.length,
               itemBuilder: (context, index) {
                 final client = _topClients[index];
@@ -510,8 +557,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Single
                 );
               },
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -533,18 +580,22 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Single
   
   Widget _buildReceiptHistoryTab() {
     return _recentReceipts.isEmpty
-        ? const Center(child: Text('No recent receipts found'))
-        : Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Text(
-                  'Recent Receipts',
-                  style: Theme.of(context).textTheme.titleLarge,
+        ? const Center(child: Text('No receipt data available'))
+        : SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Recent Receipt History',
+                  style: AppConstants.subheadingStyle,
                 ),
-              ),
-              Expanded(
-                child: ListView.builder(
+                const SizedBox(height: 16),
+                ListView.builder(
+                  shrinkWrap: true, // Important to work inside SingleChildScrollView
+                  physics: const NeverScrollableScrollPhysics(), // Prevents nested scrolling issues
                   itemCount: _recentReceipts.length,
                   itemBuilder: (context, index) {
                     final receipt = _recentReceipts[index];
@@ -614,25 +665,30 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Single
                     );
                   },
                 ),
-              ),
-            ],
-          );
+              ],
+            ),
+          ),
+        );
   }
   
   Widget _buildInventoryAlertsTab() {
     return _productInventoryAlerts.isEmpty
-        ? const Center(child: Text('No inventory alerts'))
-        : Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Text(
-                  'Low Stock Alerts',
-                  style: Theme.of(context).textTheme.titleLarge,
+        ? const Center(child: Text('No inventory alerts available'))
+        : SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Inventory Alerts',
+                  style: AppConstants.subheadingStyle,
                 ),
-              ),
-              Expanded(
-                child: ListView.builder(
+                const SizedBox(height: 16),
+                ListView.builder(
+                  shrinkWrap: true, // Important to work inside SingleChildScrollView
+                  physics: const NeverScrollableScrollPhysics(), // Prevents nested scrolling issues
                   itemCount: _productInventoryAlerts.length,
                   itemBuilder: (context, index) {
                     final product = _productInventoryAlerts[index];
@@ -714,8 +770,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Single
                     );
                   },
                 ),
-              ),
-            ],
-          );
+              ],
+            ),
+          ),
+        );
   }
 }
